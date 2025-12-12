@@ -133,6 +133,14 @@
           <span class="details-label">Комментарий</span>
           <span class="details-value" id="detailComment">—</span>
         </div>
+        <div class="details-row" id="detailIconRow" hidden>
+          <span class="details-label">Иконка</span>
+          <span class="details-value details-value--icon">
+            <span id="detailIconPreview" class="details-icon-preview" aria-hidden="true"></span>
+            <button type="button" class="ghost" id="detailIconChoose">Выбрать иконку</button>
+            <button type="button" class="ghost" id="detailIconClear">Убрать</button>
+          </span>
+        </div>
         <div class="details-row details-row--font" id="detailFontRow" hidden>
           <span class="details-label">Шрифт подписи</span>
           <span class="details-value details-font-controls">
@@ -192,6 +200,23 @@
           <button type="button" class="secondary" data-settings-dismiss>Закрыть</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <div id="iconPickerModal" class="icon-picker" aria-hidden="true">
+    <div class="icon-picker__backdrop" data-icon-dismiss></div>
+    <div class="icon-picker__dialog" role="dialog" aria-modal="true" aria-labelledby="iconPickerTitle">
+      <header class="icon-picker__header">
+        <h3 id="iconPickerTitle">Выбор иконки</h3>
+        <button type="button" class="icon-picker__close" data-icon-dismiss title="Закрыть">×</button>
+      </header>
+      <div class="icon-picker__body">
+        <div id="iconPickerGroups" class="icon-picker__groups"></div>
+      </div>
+      <footer class="icon-picker__footer">
+        <button type="button" class="ghost" data-icon-dismiss>Отмена</button>
+        <button type="button" class="primary" id="iconPickerApply" disabled>Применить</button>
+      </footer>
     </div>
   </div>
 

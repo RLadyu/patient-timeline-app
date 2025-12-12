@@ -337,6 +337,7 @@ const SVG_STYLE_TEXT = `
   .lab-label{font-size:calc(12px * var(--font-scale));font-family:'Inter','Segoe UI',sans-serif;fill:#000000;}
   .event-marker{fill:${COLORS.event};}
   .event-label{font-size:calc(12px * var(--font-scale));font-family:'Inter','Segoe UI',sans-serif;fill:#000000;}
+  .event-icon{font-size:calc(14px * var(--font-scale));font-family:'Inter','Segoe UI',sans-serif;fill:#000000;cursor:pointer;}
   .legend-group{font-size:calc(13px * var(--font-scale));font-family:'Inter','Segoe UI',sans-serif;fill:#000000;pointer-events:none;}
   .legend-label{font-size:calc(13px * var(--font-scale));font-family:'Inter','Segoe UI',sans-serif;fill:#000000;}
   .endoscopy-date-marker{fill:${COLORS.endoscopy};stroke:#ffffff;stroke-width:2;}
@@ -357,6 +358,59 @@ const LEGEND_ITEMS = [
   { key: 'lab', label: 'Лабораторная диагностика' },
   { key: 'event', label: 'События/диагнозы' }
 ];
+
+const EVENT_ICON_LIBRARY = [
+  {
+    key: 'diagnostic',
+    title: 'Диагностика',
+    keywords: ['кт', 'томограф', 'рентген', 'диагноз', 'скрининг', 'оценка', 'контроль'],
+    icons: [
+      { key: 'scan', label: 'Визуализация/КТ', glyph: '🖼️' },
+      { key: 'stethoscope', label: 'Осмотр врача', glyph: '🩺' },
+      { key: 'microscope', label: 'Лаборатория', glyph: '🔬' },
+      { key: 'report', label: 'Отчёт/консилиум', glyph: '📝' }
+    ]
+  },
+  {
+    key: 'therapy',
+    title: 'Терапия и процедуры',
+    keywords: ['терап', 'инфуз', 'назнач', 'курс', 'процед', 'операц', 'манип'],
+    icons: [
+      { key: 'pill', label: 'Медикаменты', glyph: '💊' },
+      { key: 'syringe', label: 'Инъекции', glyph: '💉' },
+      { key: 'operation', label: 'Процедура', glyph: '🛠️' },
+      { key: 'rehab', label: 'Реабилитация', glyph: '🤸' }
+    ]
+  },
+  {
+    key: 'status',
+    title: 'Состояние',
+    keywords: ['перевод', 'орит', 'обостр', 'улучш', 'стаб', 'выпис', 'поступ'],
+    icons: [
+      { key: 'alert', label: 'Обострение/тревога', glyph: '⚠️' },
+      { key: 'icu', label: 'ОРИТ/реанимация', glyph: '🏥' },
+      { key: 'home', label: 'Выписка/домой', glyph: '🏡' },
+      { key: 'check', label: 'Улучшение', glyph: '✅' }
+    ]
+  },
+  {
+    key: 'other',
+    title: 'Прочее',
+    keywords: [],
+    icons: [
+      { key: 'flag', label: 'Важное событие', glyph: '🚩' },
+      { key: 'calendar', label: 'Ключевая дата', glyph: '📅' },
+      { key: 'note', label: 'Заметка', glyph: '🗒️' }
+    ]
+  }
+];
+
+const EVENT_ICON_MAP = new Map();
+EVENT_ICON_LIBRARY.forEach((group) => {
+  group.icons.forEach((icon) => {
+    EVENT_ICON_MAP.set(icon.key, { ...icon, groupKey: group.key, groupTitle: group.title });
+  });
+});
 
 const THERAPY_MEDICATIONS = [
   'Бедаквилин',
@@ -1043,6 +1097,58 @@ function getEventDisplayLabel(item) {
   return getEventBaseLabel(item);
 }
 
+function findEventIcon(key) {
+  if (!key) return null;
+  return EVENT_ICON_MAP.get(key) || null;
+}
+
+function getEventIconPreview(item) {
+  if (!item) return '';
+  const icon = findEventIcon(item.iconKey);
+  if (!icon) return '';
+  return `${icon.glyph || ''} ${icon.label}`.trim();
+}
+
+function normalizeIconOffset(offset) {
+  if (offset && typeof offset === 'object') {
+    const x = Number(offset.x);
+    const y = Number(offset.y);
+    return {
+      x: Number.isFinite(x) ? Math.round(x) : 0,
+      y: Number.isFinite(y) ? Math.round(y) : 0
+    };
+  }
+  const numeric = Number(offset);
+  const safe = Number.isFinite(numeric) ? Math.round(numeric) : 0;
+  return { x: safe, y: 0 };
+}
+
+function suggestIconsForEvent(item) {
+  const title = (item?.title || '').toLowerCase();
+  const matchedGroups = new Set();
+  EVENT_ICON_LIBRARY.forEach((group) => {
+    if (!group.keywords || !group.keywords.length) return;
+    const hit = group.keywords.some((word) => title.includes(word));
+    if (hit) {
+      matchedGroups.add(group.key);
+    }
+  });
+  const ordered = [];
+  if (matchedGroups.size) {
+    EVENT_ICON_LIBRARY.forEach((group) => {
+      if (matchedGroups.has(group.key)) {
+        ordered.push({ ...group, recommended: true });
+      }
+    });
+  }
+  EVENT_ICON_LIBRARY.forEach((group) => {
+    if (!matchedGroups.has(group.key)) {
+      ordered.push(group);
+    }
+  });
+  return ordered;
+}
+
 function getEndoscopyDisplaySummary(item, fallbackSummary) {
   if (!item) {
     return '';
@@ -1105,6 +1211,18 @@ function clampOffsetToBounds(value, bounds = {}) {
     result = max;
   }
   return Math.round(result);
+}
+
+function clampOffsetPoint(offset, bounds = {}) {
+  const normalized = normalizeIconOffset(offset);
+  const minX = Number.isFinite(bounds.minX) ? bounds.minX : -Infinity;
+  const maxX = Number.isFinite(bounds.maxX) ? bounds.maxX : Infinity;
+  const minY = Number.isFinite(bounds.minY) ? bounds.minY : -Infinity;
+  const maxY = Number.isFinite(bounds.maxY) ? bounds.maxY : Infinity;
+  return {
+    x: Math.round(Math.min(Math.max(normalized.x, minX), maxX)),
+    y: Math.round(Math.min(Math.max(normalized.y, minY), maxY))
+  };
 }
 
 function getTherapyOffsetValue(interval) {
@@ -1533,6 +1651,9 @@ const DATA_EXPORT_FIELDS = [
   { key: 'chartHeightOverride', label: 'Высота элемента' },
   { key: 'chartOffsetY', label: 'Смещение по Y' },
   { key: 'chartFontScale', label: 'Масштаб подписи' },
+  { key: 'iconKey', label: 'Иконка' },
+  { key: 'iconOffsetX', label: 'Смещение иконки X' },
+  { key: 'iconOffsetY', label: 'Смещение иконки Y' },
   { key: 'flagged', label: 'Проблемный участок' },
   { key: 'enabled', label: 'Использовать' }
 ];
@@ -1549,13 +1670,16 @@ const OPTIONAL_IMPORT_HEADERS = new Set(
     'chartHeightOverride',
     'chartOffsetY',
     'chartFontScale',
+    'iconKey',
+    'iconOffsetX',
+    'iconOffsetY',
     'enabled'
   ].map(
     (key) => DATA_EXPORT_LABEL_BY_KEY.get(key)
   )
 );
 const DATA_EXPORT_FILENAME = 'timeline-data.csv';
-const DATA_EXPORT_VERSION = '1.7.0';
+const DATA_EXPORT_VERSION = '1.8.0';
 
 const EXPORT_TYPE_ORDER = new Map([
   ['temperature', 0],
@@ -2353,14 +2477,23 @@ const detailFontRow = document.getElementById('detailFontRow');
 const detailFontValue = document.getElementById('detailFontValue');
 const detailFontDecrease = document.getElementById('detailFontDecrease');
 const detailFontIncrease = document.getElementById('detailFontIncrease');
+const detailIconRow = document.getElementById('detailIconRow');
+const detailIconPreview = document.getElementById('detailIconPreview');
+const detailIconChoose = document.getElementById('detailIconChoose');
+const detailIconClear = document.getElementById('detailIconClear');
 const deleteSelectedButton = document.getElementById('deleteSelected');
 const previewModal = document.getElementById('previewModal');
 const previewImage = document.getElementById('previewImage');
 const previewDownloadLink = document.getElementById('previewDownload');
 const zoomInButton = document.getElementById('zoomIn');
 const zoomOutButton = document.getElementById('zoomOut');
+const iconPickerModal = document.getElementById('iconPickerModal');
+const iconPickerGroups = document.getElementById('iconPickerGroups');
+const iconPickerApply = document.getElementById('iconPickerApply');
 let isVisibilityDropdownOpen = false;
 let isToolbarMenuOpen = false;
+let iconPickerContext = null;
+let activeIconActionMenu = null;
 
 const displayPreferences = {
   fontSizePx: 16,
@@ -2728,6 +2861,10 @@ function ensureTooltipElement() {
         <div class="chart-tooltip__datetime" data-tooltip-datetime></div>
         <div class="chart-tooltip__flag" data-tooltip-flag hidden>Проблемный участок</div>
         <div class="chart-tooltip__comment" data-tooltip-comment></div>
+        <div class="chart-tooltip__icon-row" data-tooltip-icon-row hidden>
+          <span class="chart-tooltip__icon-preview" data-tooltip-icon-preview></span>
+          <button type="button" class="ghost" data-tooltip-icon-picker>Выбрать иконку</button>
+        </div>
       </div>
     </div>
   `;
@@ -2739,6 +2876,16 @@ function ensureTooltipElement() {
   tooltipSaveButton = null;
   tooltipCancelButton = null;
   document.body.appendChild(element);
+  const iconButton = element.querySelector('[data-tooltip-icon-picker]');
+  if (iconButton) {
+    iconButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const eventId = iconButton.dataset.eventId;
+      if (eventId) {
+        openIconPickerForEvent(eventId);
+      }
+    });
+  }
   tooltipElement = element;
   return tooltipElement;
 }
@@ -2784,6 +2931,24 @@ function updateTooltipContent(detail, editInfo) {
     });
   } else {
     commentEl.hidden = true;
+  }
+
+  const iconRow = tooltip.querySelector('[data-tooltip-icon-row]');
+  const iconPreview = tooltip.querySelector('[data-tooltip-icon-preview]');
+  const iconButton = tooltip.querySelector('[data-tooltip-icon-picker]');
+  if (iconRow && iconPreview && iconButton) {
+    const eventId = detail?.iconContext?.id || '';
+    if (eventId) {
+      const eventItem = state.events.find((entry) => entry.id === eventId);
+      const icon = eventItem ? findEventIcon(eventItem.iconKey) : null;
+      iconPreview.textContent = icon ? `${icon.glyph || ''} ${icon.label}`.trim() : '—';
+      iconButton.dataset.eventId = eventId;
+      iconButton.disabled = false;
+      iconRow.hidden = false;
+    } else {
+      iconRow.hidden = true;
+      iconButton.dataset.eventId = '';
+    }
   }
 
 }
@@ -5895,6 +6060,28 @@ function updateDetailFontControls(target) {
   detailFontIncrease.disabled = info.sizePx >= info.maxPx - 0.5;
 }
 
+function updateDetailIconControls(detail) {
+  if (!detailIconRow || !detailIconPreview || !detailIconChoose || !detailIconClear) {
+    return;
+  }
+  const eventId = detail?.iconContext?.id || null;
+  if (!eventId) {
+    detailIconRow.hidden = true;
+    detailIconChoose.dataset.eventId = '';
+    detailIconClear.dataset.eventId = '';
+    return;
+  }
+  const eventItem = state.events.find((entry) => entry.id === eventId);
+  const icon = eventItem ? findEventIcon(eventItem.iconKey) : null;
+  detailIconRow.hidden = false;
+  detailIconPreview.textContent = icon ? icon.glyph : '—';
+  detailIconPreview.title = icon ? icon.label : 'Без иконки';
+  detailIconChoose.disabled = false;
+  detailIconClear.disabled = !icon;
+  detailIconChoose.dataset.eventId = eventId;
+  detailIconClear.dataset.eventId = eventId;
+}
+
 function adjustFontForSelection(deltaPx) {
   if (!activeFontTarget) return;
   const info = getFontTargetInfo(activeFontTarget);
@@ -5938,6 +6125,7 @@ function showDetails(detail) {
     detailTitle.textContent = '—';
     detailComment.textContent = '—';
     updateDetailFontControls(null);
+    updateDetailIconControls(null);
     return;
   }
 
@@ -5946,6 +6134,165 @@ function showDetails(detail) {
   detailTitle.textContent = detail.title || '—';
   detailComment.textContent = detail.comment ? detail.comment : '—';
   updateDetailFontControls(detail.fontTarget || null);
+  updateDetailIconControls(detail || null);
+}
+
+function setEventIcon(eventId, iconKey) {
+  const eventItem = state.events.find((entry) => entry.id === eventId);
+  if (!eventItem) return false;
+  if (!iconKey) {
+    if (!eventItem.iconKey && !eventItem.iconOffset) {
+      return false;
+    }
+    delete eventItem.iconKey;
+    delete eventItem.iconOffset;
+    return true;
+  }
+  const icon = findEventIcon(iconKey);
+  if (!icon) return false;
+  eventItem.iconKey = iconKey;
+  if (!eventItem.iconOffset) {
+    eventItem.iconOffset = { x: 6, y: -12 };
+  }
+  return true;
+}
+
+function clearEventIcon(eventId) {
+  pushHistoryState();
+  const changed = setEventIcon(eventId, '');
+  if (!changed) {
+    historyStack.pop();
+    return;
+  }
+  renderTimeline();
+  if (activeDetailPayload) {
+    const iconContext = activeDetailPayload.iconContext;
+    if (iconContext && iconContext.id === eventId) {
+      const eventItem = state.events.find((entry) => entry.id === eventId);
+      activeDetailPayload.iconContext = { id: eventId, iconKey: eventItem?.iconKey || '' };
+      showDetails(activeDetailPayload);
+    }
+  }
+}
+
+function renderIconPicker(groups, selectedKey) {
+  if (!iconPickerGroups) return;
+  iconPickerGroups.innerHTML = '';
+  groups.forEach((group) => {
+    const wrapper = document.createElement('div');
+    const title = document.createElement('div');
+    title.className = 'icon-picker__group-title';
+    title.textContent = group.recommended ? `${group.title} • рекомендовано` : group.title;
+    wrapper.appendChild(title);
+
+    const grid = document.createElement('div');
+    grid.className = 'icon-picker__grid';
+    group.icons.forEach((icon) => {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = 'icon-picker__option';
+      option.dataset.iconKey = icon.key;
+      option.setAttribute('data-selected', icon.key === selectedKey ? 'true' : 'false');
+      const glyph = document.createElement('span');
+      glyph.className = 'icon-picker__glyph';
+      glyph.textContent = icon.glyph || '•';
+      const label = document.createElement('span');
+      label.className = 'icon-picker__label';
+      label.textContent = icon.label;
+      option.appendChild(glyph);
+      option.appendChild(label);
+      option.addEventListener('click', () => {
+        iconPickerContext = iconPickerContext ? { ...iconPickerContext, selectedKey: icon.key } : { selectedKey: icon.key };
+        renderIconPicker(groups, icon.key);
+        if (iconPickerApply) {
+          iconPickerApply.disabled = false;
+        }
+      });
+      grid.appendChild(option);
+    });
+    wrapper.appendChild(grid);
+    iconPickerGroups.appendChild(wrapper);
+  });
+}
+
+function openIconPickerForEvent(eventId) {
+  hideIconActionMenu();
+  const eventItem = state.events.find((entry) => entry.id === eventId);
+  if (!eventItem || !iconPickerModal || !iconPickerGroups || !iconPickerApply) {
+    return;
+  }
+  const groups = suggestIconsForEvent(eventItem);
+  iconPickerContext = { eventId, selectedKey: eventItem.iconKey || '', groups };
+  renderIconPicker(groups, iconPickerContext.selectedKey);
+  iconPickerApply.disabled = !iconPickerContext.selectedKey;
+  iconPickerModal.setAttribute('aria-hidden', 'false');
+}
+
+function closeIconPicker() {
+  if (!iconPickerModal) return;
+  iconPickerModal.setAttribute('aria-hidden', 'true');
+  iconPickerContext = null;
+}
+
+function applyIconSelection() {
+  if (!iconPickerContext) return;
+  const { eventId, selectedKey } = iconPickerContext;
+  if (!eventId || !selectedKey) {
+    closeIconPicker();
+    return;
+  }
+  pushHistoryState();
+  const changed = setEventIcon(eventId, selectedKey);
+  if (!changed) {
+    historyStack.pop();
+    closeIconPicker();
+    return;
+  }
+  closeIconPicker();
+  renderTimeline();
+  if (activeDetailPayload) {
+    activeDetailPayload.iconContext = { id: eventId, iconKey: selectedKey };
+    showDetails(activeDetailPayload);
+  }
+}
+
+function hideIconActionMenu() {
+  if (activeIconActionMenu) {
+    activeIconActionMenu.remove();
+    activeIconActionMenu = null;
+  }
+}
+
+function showIconActionMenu(target, eventId) {
+  hideIconActionMenu();
+  if (!target || !eventId) return;
+  const menu = document.createElement('div');
+  menu.className = 'icon-action-menu';
+  const replaceBtn = document.createElement('button');
+  replaceBtn.type = 'button';
+  replaceBtn.className = 'primary';
+  replaceBtn.textContent = 'Заменить иконку';
+  replaceBtn.addEventListener('click', () => {
+    hideIconActionMenu();
+    openIconPickerForEvent(eventId);
+  });
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'danger';
+  deleteBtn.textContent = 'Удалить иконку';
+  deleteBtn.addEventListener('click', () => {
+    hideIconActionMenu();
+    clearEventIcon(eventId);
+  });
+  menu.appendChild(replaceBtn);
+  menu.appendChild(deleteBtn);
+  document.body.appendChild(menu);
+  const rect = target.getBoundingClientRect();
+  const left = Math.min(rect.right + 12, window.innerWidth - menu.offsetWidth - 12);
+  const top = Math.min(rect.top, window.innerHeight - menu.offsetHeight - 12);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  activeIconActionMenu = menu;
 }
 
 function registerDraggable(elements, config = {}) {
@@ -6299,13 +6646,30 @@ function applyDragOffset(context) {
     return false;
   }
   const dy = Number(context.dy) || 0;
-  const startOffset = Number(context.startOffset) || 0;
+  const dx = Number(context.dx) || 0;
+  const startOffset = context.startOffset !== undefined ? context.startOffset : 0;
+  const bounds = context.bounds || {};
+
+  if (typeof startOffset === 'object') {
+    if (!dx && !dy) {
+      return false;
+    }
+    const next = clampOffsetPoint({
+      x: (startOffset.x || 0) + dx,
+      y: (startOffset.y || 0) + dy
+    }, bounds);
+    if (next.x === (startOffset.x || 0) && next.y === (startOffset.y || 0)) {
+      return false;
+    }
+    return context.config.applyOffset(next) !== false;
+  }
+
   if (!dy) {
     return false;
   }
-  const bounds = context.bounds || {};
-  const nextOffset = clampOffsetToBounds(startOffset + dy, bounds);
-  if (nextOffset === startOffset) {
+  const numericStart = Number(startOffset) || 0;
+  const nextOffset = clampOffsetToBounds(numericStart + dy, bounds);
+  if (nextOffset === numericStart) {
     return false;
   }
   return context.config.applyOffset(nextOffset) !== false;
@@ -6641,6 +7005,7 @@ function renderTimeline() {
   hideTooltip(true);
   closeInlineEditor();
   finishChartLabelEditor(false);
+  hideIconActionMenu();
   updateTimelineDates();
   const dates = state.timelineDates;
   const visibleTrackKeys = getVisibleTrackKeys();
@@ -7764,6 +8129,18 @@ function applyEventLabelOverride(eventId, newText) {
   return true;
 }
 
+function applyEventIconOffset(eventId, nextOffset, bounds = {}) {
+  const target = state.events.find((item) => item.id === eventId);
+  if (!target) return false;
+  const clamped = clampOffsetPoint(nextOffset, bounds);
+  const current = normalizeIconOffset(target.iconOffset || { x: 6, y: -12 });
+  if (clamped.x === current.x && clamped.y === current.y) {
+    return false;
+  }
+  target.iconOffset = clamped;
+  return true;
+}
+
 function applyEndoscopySummaryOverride(entryId, newText) {
   if (!entryId) {
     return false;
@@ -8075,7 +8452,8 @@ function renderEvents(track, dates) {
       color: COLORS.event,
       isFlagged: Boolean(item.isFlagged),
       deleteInfo: { type: 'event', id: item.id },
-      fontTarget: { type: 'event', id: item.id }
+      fontTarget: { type: 'event', id: item.id },
+      iconContext: { id: item.id, iconKey: item.iconKey || '' }
     };
 
     const editInfo = { type: 'event', id: item.id };
@@ -8098,6 +8476,32 @@ function renderEvents(track, dates) {
         indicator.classList.add('is-flagged-text');
         attachDetails(indicator, detailPayload, path, item.id, editInfo);
       }
+    }
+
+    const iconDef = findEventIcon(item.iconKey);
+    if (iconDef) {
+      const offset = normalizeIconOffset(item.iconOffset || { x: 6, y: -12 });
+      const icon = createSvgElement('text', {
+        x: x + markerSize + 6 + offset.x,
+        y: centerY - markerSize - 6 + offset.y,
+        class: 'event-icon'
+      });
+      icon.textContent = iconDef.glyph || '•';
+      icon.style.fontSize = `${14 * itemFontScale}px`;
+      timelineSvg.appendChild(icon);
+      attachDetails(icon, detailPayload, path, `${item.id}-icon`, editInfo, { inlineEditor: false });
+      registerDraggable([icon], {
+        type: 'eventIcon',
+        id: item.id,
+        startDate: item.date,
+        getOffset: () => normalizeIconOffset(item.iconOffset || { x: 6, y: -12 }),
+        getOffsetBounds: () => ({ minX: -120, maxX: 140, minY: -80, maxY: 80 }),
+        applyOffset: (nextOffset) => applyEventIconOffset(item.id, nextOffset, { minX: -120, maxX: 140, minY: -80, maxY: 80 })
+      });
+      icon.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        showIconActionMenu(icon, item.id);
+      });
     }
 
     registerDraggable([path, label], {
@@ -8725,6 +9129,9 @@ function buildExportRows() {
       chartHeightOverride: '',
       chartOffsetY: '',
       chartFontScale: item.chartFontScale || '',
+      iconKey: '',
+      iconOffsetX: '',
+      iconOffsetY: '',
       flagged: Boolean(item.isFlagged),
       enabled: true
     });
@@ -8757,6 +9164,9 @@ function buildExportRows() {
       chartHeightOverride: '',
       chartOffsetY: '',
       chartFontScale: item.chartFontScale || '',
+      iconKey: '',
+      iconOffsetX: '',
+      iconOffsetY: '',
       flagged: Boolean(item.isFlagged),
       enabled: true
     });
@@ -8789,6 +9199,9 @@ function buildExportRows() {
       chartHeightOverride: item.chartHeightOverride || '',
       chartOffsetY: '',
       chartFontScale: item.chartFontScale || '',
+      iconKey: '',
+      iconOffsetX: '',
+      iconOffsetY: '',
       flagged: Boolean(item.isFlagged),
       enabled: true
     });
@@ -8819,7 +9232,11 @@ function buildExportRows() {
       courseStartDate: '',
       courseEndDate: '',
       chartHeightOverride: '',
+      chartOffsetY: '',
       chartFontScale: item.chartFontScale || '',
+      iconKey: '',
+      iconOffsetX: '',
+      iconOffsetY: '',
       flagged: Boolean(item.isFlagged),
       enabled: true
     });
@@ -8854,6 +9271,9 @@ function buildExportRows() {
       chartHeightOverride: '',
       chartOffsetY: '',
       chartFontScale: item.chartFontScale || '',
+      iconKey: item.iconKey || '',
+      iconOffsetX: item.iconOffset ? item.iconOffset.x || '' : '',
+      iconOffsetY: item.iconOffset ? item.iconOffset.y || '' : '',
       flagged: Boolean(item.isFlagged),
       enabled: true
     });
@@ -8886,6 +9306,9 @@ function buildExportRows() {
       chartHeightOverride: item.chartHeightOverride || '',
       chartOffsetY: item.chartOffsetY !== undefined ? item.chartOffsetY : '',
       chartFontScale: item.chartFontScale || '',
+      iconKey: '',
+      iconOffsetX: '',
+      iconOffsetY: '',
       flagged: Boolean(item.isFlagged),
       enabled: true
     });
@@ -8924,6 +9347,9 @@ function buildExportRows() {
       chartHeightOverride: item.chartHeightOverride || '',
       chartOffsetY: item.chartOffsetY !== undefined ? item.chartOffsetY : '',
       chartFontScale: item.chartFontScale || '',
+      iconKey: '',
+      iconOffsetX: '',
+      iconOffsetY: '',
       flagged: Boolean(item.isFlagged),
       enabled: true
     });
@@ -8969,6 +9395,9 @@ function buildExportRows() {
         chartHeightOverride: medication.chartHeightOverride || '',
         chartOffsetY: medication.chartOffsetY !== undefined ? medication.chartOffsetY : '',
         chartFontScale: medication.chartFontScale || '',
+        iconKey: '',
+        iconOffsetX: '',
+        iconOffsetY: '',
         flagged: Boolean(course.isFlagged),
         enabled: true
       });
@@ -9273,6 +9702,9 @@ function importDataFromCsv(text) {
         }
         const chartLabelOverride = (entry.chartLabelOverride || '').trim();
         const chartFontScale = parseCsvFontScale(entry.chartFontScale);
+        const iconKey = (entry.iconKey || '').trim();
+        const iconOffsetX = parseCsvNumber(entry.iconOffsetX);
+        const iconOffsetY = parseCsvNumber(entry.iconOffsetY);
         const eventEntry = {
           id: nextId('event'),
           date: entry.date,
@@ -9286,6 +9718,13 @@ function importDataFromCsv(text) {
         }
         if (chartFontScale !== null) {
           eventEntry.chartFontScale = chartFontScale;
+        }
+        if (iconKey && findEventIcon(iconKey)) {
+          eventEntry.iconKey = iconKey;
+        }
+        if (Number.isFinite(iconOffsetX) || Number.isFinite(iconOffsetY)) {
+          const offset = normalizeIconOffset({ x: iconOffsetX ?? 0, y: iconOffsetY ?? 0 });
+          eventEntry.iconOffset = offset;
         }
         nextState.events.push(eventEntry);
         break;
@@ -10124,6 +10563,24 @@ if (detailFontIncrease) {
   detailFontIncrease.addEventListener('click', () => adjustFontForSelection(CHART_FONT_STEP_PX));
 }
 
+if (detailIconChoose) {
+  detailIconChoose.addEventListener('click', () => {
+    const id = detailIconChoose.dataset.eventId;
+    if (id) {
+      openIconPickerForEvent(id);
+    }
+  });
+}
+
+if (detailIconClear) {
+  detailIconClear.addEventListener('click', () => {
+    const id = detailIconClear.dataset.eventId;
+    if (id) {
+      clearEventIcon(id);
+    }
+  });
+}
+
 if (resetGraphButton) {
   resetGraphButton.addEventListener('click', handleClearAll);
 }
@@ -10148,6 +10605,26 @@ if (toolbarMenuButton) {
   toolbarMenuButton.addEventListener('click', (event) => {
     event.preventDefault();
     toggleToolbarMenu();
+  });
+}
+
+document.addEventListener('click', (event) => {
+  if (activeIconActionMenu && !activeIconActionMenu.contains(event.target)) {
+    hideIconActionMenu();
+  }
+});
+
+if (iconPickerApply) {
+  iconPickerApply.addEventListener('click', applyIconSelection);
+}
+
+if (iconPickerModal) {
+  const dismissors = iconPickerModal.querySelectorAll('[data-icon-dismiss]');
+  dismissors.forEach((btn) => {
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      closeIconPicker();
+    });
   });
 }
 
