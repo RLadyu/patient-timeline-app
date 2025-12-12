@@ -372,6 +372,16 @@ const EVENT_ICON_LIBRARY = [
     ]
   },
   {
+    key: 'respiratory',
+    title: 'Дыхательная система',
+    keywords: ['кашл', 'кровохарк', 'бронх', 'легк', 'дых', 'спазм', 'адхез'],
+    icons: [
+      { key: 'lungs', label: 'Лёгкие/бронхи', glyph: '🫁' },
+      { key: 'oxygen', label: 'Дыхательная поддержка', glyph: '🫧' },
+      { key: 'drop', label: 'Гемоптизис/кровохарканье', glyph: '💧' }
+    ]
+  },
+  {
     key: 'therapy',
     title: 'Терапия и процедуры',
     keywords: ['терап', 'инфуз', 'назнач', 'курс', 'процед', 'операц', 'манип'],
@@ -411,6 +421,25 @@ EVENT_ICON_LIBRARY.forEach((group) => {
     EVENT_ICON_MAP.set(icon.key, { ...icon, groupKey: group.key, groupTitle: group.title });
   });
 });
+
+const EVENT_ICON_HINTS = [
+  { iconKey: 'icu', patterns: ['орит', 'реаним', 'интенсив'] },
+  { iconKey: 'home', patterns: ['выпис', 'домой'] },
+  { iconKey: 'alert', patterns: ['обостр', 'шок', 'ухудш', 'крит'] },
+  { iconKey: 'check', patterns: ['улучш', 'ремис', 'стаб'] },
+  { iconKey: 'pill', patterns: ['назнач', 'терап', 'лекар', 'препарат'] },
+  { iconKey: 'syringe', patterns: ['инъек', 'в/в', 'в/м'] },
+  { iconKey: 'operation', patterns: ['процед', 'операц', 'манип'] },
+  { iconKey: 'rehab', patterns: ['реабил', 'физио', 'лфк'] },
+  { iconKey: 'lungs', patterns: ['кашл', 'бронх', 'легк', 'дых'] },
+  { iconKey: 'oxygen', patterns: ['оксиген', 'сатурац', 'кислород'] },
+  { iconKey: 'drop', patterns: ['кровохарк', 'гемоптиз'] },
+  { iconKey: 'microscope', patterns: ['микр', 'бактер', 'посев', 'анализ'] },
+  { iconKey: 'scan', patterns: ['кт', 'мрт', 'рентген', 'скан'] },
+  { iconKey: 'stethoscope', patterns: ['осмотр', 'консилиум', 'визит'] },
+  { iconKey: 'report', patterns: ['заключ', 'протокол', 'отч'] },
+  { iconKey: 'flag', patterns: ['важно', 'критич'] }
+];
 
 const THERAPY_MEDICATIONS = [
   'Бедаквилин',
@@ -1147,6 +1176,24 @@ function suggestIconsForEvent(item) {
     }
   });
   return ordered;
+}
+
+function chooseAutoIconKey(item) {
+  const title = (item?.title || '').toLowerCase();
+  const hint = EVENT_ICON_HINTS.find((entry) => entry.patterns.some((word) => title.includes(word)));
+  if (hint && findEventIcon(hint.iconKey)) {
+    return hint.iconKey;
+  }
+  const groups = suggestIconsForEvent(item);
+  const recommended = groups.find((group) => group.recommended && group.icons && group.icons.length);
+  if (recommended) {
+    return recommended.icons[0].key;
+  }
+  const fallbackGroup = groups.find((group) => group.icons && group.icons.length);
+  if (fallbackGroup) {
+    return fallbackGroup.icons[0].key;
+  }
+  return '';
 }
 
 function getEndoscopyDisplaySummary(item, fallbackSummary) {
@@ -6222,7 +6269,8 @@ function openIconPickerForEvent(eventId) {
     return;
   }
   const groups = suggestIconsForEvent(eventItem);
-  iconPickerContext = { eventId, selectedKey: eventItem.iconKey || '', groups };
+  const autoKey = eventItem.iconKey || chooseAutoIconKey(eventItem);
+  iconPickerContext = { eventId, selectedKey: autoKey, groups };
   renderIconPicker(groups, iconPickerContext.selectedKey);
   iconPickerApply.disabled = !iconPickerContext.selectedKey;
   iconPickerModal.setAttribute('aria-hidden', 'false');
