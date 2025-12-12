@@ -5816,6 +5816,14 @@ function resolveFontTargetItem(target) {
         return key === target.medicationId;
       });
     }
+    case 'temperature':
+      return state.temps.find((entry) => entry.id === target.id);
+    case 'neuro':
+      return state.neuro.find((entry) => entry.id === target.id);
+    case 'liver':
+      return state.liver.find((entry) => entry.id === target.id);
+    case 'lab':
+      return state.labDiagnostics.find((entry) => entry.id === target.id);
     case 'support':
       return state.supportiveTherapy.find((entry) => entry.id === target.id);
     case 'endoscopy':
@@ -6865,6 +6873,7 @@ function renderTemperature(track, dates) {
   timelineSvg.appendChild(path);
 
   points.forEach(({ item, x, y }) => {
+    const fontScale = getEffectiveChartFontScale(item);
     const circle = createSvgElement('circle', {
       cx: x,
       cy: y,
@@ -6875,22 +6884,24 @@ function renderTemperature(track, dates) {
 
     const valueLabel = createSvgElement('text', {
       x,
-      y: y - 12,
+      y: y - 12 * fontScale,
       class: 'temperature-value',
       'text-anchor': 'middle'
     });
     valueLabel.textContent = Number(item.value).toFixed(1);
+    valueLabel.style.fontSize = `${12 * fontScale}px`;
     timelineSvg.appendChild(valueLabel);
 
     let comment;
     if (item.comment) {
       comment = createSvgElement('text', {
         x,
-        y: y - 28,
+        y: y - 28 * fontScale,
         class: 'temperature-comment',
         'text-anchor': 'middle'
       });
       comment.textContent = item.comment;
+      comment.style.fontSize = `${12 * fontScale}px`;
       timelineSvg.appendChild(comment);
     }
 
@@ -6902,7 +6913,8 @@ function renderTemperature(track, dates) {
       comment: item.comment || '',
       color: COLORS.accent,
       isFlagged: Boolean(item.isFlagged),
-      deleteInfo: { type: 'temperature', id: item.id }
+      deleteInfo: { type: 'temperature', id: item.id },
+      fontTarget: { type: 'temperature', id: item.id }
     };
     const editInfo = { type: 'temperature', id: item.id };
 
@@ -7791,6 +7803,7 @@ function renderNeuro(track, dates) {
 
   sorted.forEach((item) => {
     const x = getXPosition(item.date, dates);
+    const fontScale = getEffectiveChartFontScale(item);
     const marker = createSvgElement('circle', {
       cx: x,
       cy: centerY,
@@ -7805,6 +7818,7 @@ function renderNeuro(track, dates) {
       class: 'neuro-label'
     });
     label.textContent = item.status;
+    label.style.fontSize = `${12 * fontScale}px`;
     timelineSvg.appendChild(label);
 
     const editInfo = { type: 'neuro', id: item.id };
@@ -7816,7 +7830,8 @@ function renderNeuro(track, dates) {
       comment: item.comment || '',
       color: COLORS.neuro,
       isFlagged: Boolean(item.isFlagged),
-      deleteInfo: { type: 'neuro', id: item.id }
+      deleteInfo: { type: 'neuro', id: item.id },
+      fontTarget: { type: 'neuro', id: item.id }
     };
 
     attachDetails(marker, detailPayload, marker, item.id, editInfo);
@@ -7881,12 +7896,14 @@ function renderLiver(track, dates, chartWidth) {
     });
     timelineSvg.appendChild(rect);
 
+    const fontScale = getEffectiveChartFontScale(item);
     const label = createSvgElement('text', {
       x: xStart + 6,
       y: y - 6,
       class: 'liver-label'
     });
     label.textContent = item.status;
+    label.style.fontSize = `${12 * fontScale}px`;
     timelineSvg.appendChild(label);
 
     const comment = item.endDate
@@ -7901,7 +7918,8 @@ function renderLiver(track, dates, chartWidth) {
       comment,
       color: COLORS.liver,
       isFlagged: Boolean(item.isFlagged),
-      deleteInfo: { type: 'liver', id: item.id }
+      deleteInfo: { type: 'liver', id: item.id },
+      fontTarget: { type: 'liver', id: item.id }
     };
 
     attachDetails(rect, detailPayload, rect, item.id, editInfo);
@@ -7959,6 +7977,7 @@ function renderLabDiagnostics(track, dates) {
     const x = getXPosition(item.date, dates);
     const y = centerY + offsetIndex * levelSpacing;
 
+    const fontScale = getEffectiveChartFontScale(item);
     const marker = createSvgElement('rect', {
       x: x - 9,
       y: y - 9,
@@ -7976,6 +7995,7 @@ function renderLabDiagnostics(track, dates) {
       class: 'lab-label'
     });
     label.textContent = item.testType;
+    label.style.fontSize = `${12 * fontScale}px`;
     timelineSvg.appendChild(label);
 
     const detail = {
@@ -7986,7 +8006,8 @@ function renderLabDiagnostics(track, dates) {
       comment: item.result || '',
       color: COLORS.lab,
       isFlagged: Boolean(item.isFlagged),
-      deleteInfo: { type: 'lab', id: item.id }
+      deleteInfo: { type: 'lab', id: item.id },
+      fontTarget: { type: 'lab', id: item.id }
     };
 
     const editInfo = { type: 'lab', id: item.id };
@@ -9184,13 +9205,15 @@ function importDataFromCsv(text) {
           skippedRows.push({ row: index + 2, reason: 'Температура без даты или значения' });
           break;
         }
+        const chartFontScale = parseCsvFontScale(entry.chartFontScale);
         nextState.temps.push({
           id: nextId('temp'),
           date: entry.date,
           time: entry.time || '',
           value: entry.value,
           comment: entry.comment || '',
-          isFlagged: parseCsvBoolean(entry.flagged)
+          isFlagged: parseCsvBoolean(entry.flagged),
+          ...(chartFontScale !== null ? { chartFontScale } : {})
         });
         break;
       }
@@ -9199,12 +9222,14 @@ function importDataFromCsv(text) {
           skippedRows.push({ row: index + 2, reason: 'НС без даты или описания' });
           break;
         }
+        const chartFontScale = parseCsvFontScale(entry.chartFontScale);
         nextState.neuro.push({
           id: nextId('neuro'),
           date: entry.date,
           status: entry.status,
           comment: entry.comment || '',
-          isFlagged: parseCsvBoolean(entry.flagged)
+          isFlagged: parseCsvBoolean(entry.flagged),
+          ...(chartFontScale !== null ? { chartFontScale } : {})
         });
         break;
       }
@@ -9213,12 +9238,14 @@ function importDataFromCsv(text) {
           skippedRows.push({ row: index + 2, reason: 'ЛПП без даты начала или описания' });
           break;
         }
+        const chartFontScale = parseCsvFontScale(entry.chartFontScale);
         nextState.liver.push({
           id: nextId('liver'),
           startDate: entry.startDate,
           endDate: entry.endDate || '',
           status: entry.status,
-          isFlagged: parseCsvBoolean(entry.flagged)
+          isFlagged: parseCsvBoolean(entry.flagged),
+          ...(chartFontScale !== null ? { chartFontScale } : {})
         });
         break;
       }
@@ -9227,13 +9254,15 @@ function importDataFromCsv(text) {
           skippedRows.push({ row: index + 2, reason: 'Лабораторный анализ без даты или типа' });
           break;
         }
+        const chartFontScale = parseCsvFontScale(entry.chartFontScale);
         nextState.labDiagnostics.push({
           id: nextId('lab'),
           date: entry.date,
           time: entry.time || '',
           testType: entry.testType,
           result: entry.result || entry.comment || '',
-          isFlagged: parseCsvBoolean(entry.flagged)
+          isFlagged: parseCsvBoolean(entry.flagged),
+          ...(chartFontScale !== null ? { chartFontScale } : {})
         });
         break;
       }
