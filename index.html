@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Клиническая история пациента</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="panel left-panel">
+      <h1>Добавить параметр</h1>
+      <form id="entryForm" autocomplete="off">
+        <div class="parameter-visibility" data-visibility-container>
+          <button
+            type="button"
+            class="parameter-visibility__trigger"
+            data-visibility-trigger
+            aria-expanded="false"
+          >
+            <span class="parameter-visibility__trigger-label">Отображение на графике</span>
+            <span class="parameter-visibility__summary" data-visibility-summary>—</span>
+            <span class="parameter-visibility__count" data-visibility-count>0</span>
+            <span class="parameter-visibility__chevron" aria-hidden="true"></span>
+          </button>
+          <div class="parameter-visibility__dropdown" data-visibility-dropdown hidden></div>
+        </div>
+        <label for="directionSelect">Направление</label>
+        <select id="directionSelect" required></select>
+        <label for="parameterSelect">Параметр</label>
+        <select id="parameterSelect" required></select>
+        <div id="dynamicFields" class="form-fields"></div>
+        <div class="form-actions">
+          <button type="submit" class="primary">Добавить</button>
+          <button type="button" id="clearAll" class="secondary">Очистить всё</button>
+        </div>
+      </form>
+    </aside>
+
+    <div class="chart-column">
+      <section class="panel chart-panel">
+        <header class="chart-header">
+          <h2>Хронология лечения</h2>
+          <div class="chart-header__actions">
+            <button type="button" id="resetGraph" class="ghost chart-header__action">Сбросить график</button>
+            <div class="chart-header__menu" data-toolbar-menu>
+              <button
+                type="button"
+                id="toolbarMenuButton"
+                class="ghost chart-header__menu-trigger"
+                aria-haspopup="true"
+                aria-expanded="false"
+                aria-controls="toolbarMenu"
+                title="Дополнительные действия"
+              >
+                <span class="chart-header__menu-dots" aria-hidden="true"></span>
+                <span class="sr-only">Дополнительные действия</span>
+              </button>
+              <div id="toolbarMenu" class="chart-header__menu-dropdown" role="menu" hidden>
+                <button type="button" id="importData" class="chart-header__menu-item" role="menuitem">Загрузить данные</button>
+                <button type="button" id="exportData" class="chart-header__menu-item" role="menuitem">Выгрузить данные</button>
+                <button type="button" id="downloadPng" class="chart-header__menu-item" role="menuitem">Скачать PNG</button>
+                <button type="button" id="openSettings" class="chart-header__menu-item" role="menuitem">Настройки</button>
+              </div>
+            </div>
+          </div>
+          <input type="file" id="importFile" accept=".csv" hidden />
+        </header>
+        <div class="chart-scroll" id="chartScroll">
+          <div id="chartViewport" class="chart-viewport">
+            <svg id="timeline" xmlns="http://www.w3.org/2000/svg" role="presentation"></svg>
+            <div
+              id="inlineEditorLayer"
+              class="chart-inline-editor-layer"
+              aria-hidden="true"
+            ></div>
+          </div>
+        </div>
+        <div class="chart-bottom-controls">
+          <button type="button" id="undoAction" class="ghost chart-bottom-controls__undo">Отменить действие</button>
+          <div class="chart-bottom-controls__zoom" role="group" aria-label="Масштаб">
+            <button type="button" id="zoomOut" class="ghost" title="Уменьшить масштаб">−</button>
+            <button type="button" id="zoomIn" class="ghost" title="Увеличить масштаб">+</button>
+          </div>
+        </div>
+        <div id="previewModal" class="preview-modal" aria-hidden="true">
+          <div class="preview-modal__backdrop" data-preview-close></div>
+          <div class="preview-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="previewTitle">
+            <button type="button" class="preview-modal__close" title="Закрыть" data-preview-close>&times;</button>
+            <h3 id="previewTitle">Предпросмотр PNG</h3>
+            <div class="preview-modal__body">
+              <img id="previewImage" alt="Предпросмотр диаграммы" />
+            </div>
+            <a id="previewDownload" class="preview-modal__download" download="timeline.png">Скачать файл</a>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="panel details-panel">
+      <h2>Детали</h2>
+      <div class="details-content">
+        <div class="details-row details-row--type">
+          <span class="details-label">Тип</span>
+          <span class="details-value details-value--with-indicator">
+            <span class="details-indicator" id="detailColor" aria-hidden="true" data-empty="true"></span>
+            <span id="detailType">Выберите событие на графике</span>
+            <span id="detailFlag" class="details-flag" hidden aria-hidden="true">
+              <span class="details-flag__icon" aria-hidden="true"></span>
+              <span class="details-flag__text">Проблемный участок</span>
+            </span>
+          </span>
+        </div>
+        <div class="details-row">
+          <span class="details-label">Дата/время</span>
+          <span class="details-value" id="detailDate">—</span>
+        </div>
+        <div class="details-row">
+          <span class="details-label">Описание</span>
+          <span class="details-value details-value--emphasis" id="detailTitle">—</span>
+        </div>
+        <div class="details-row">
+          <span class="details-label">Комментарий</span>
+          <span class="details-value" id="detailComment">—</span>
+        </div>
+        <div class="details-row" id="detailIconRow" hidden>
+          <span class="details-label">Иконка</span>
+          <span class="details-value details-value--icon">
+            <span id="detailIconPreview" class="details-icon-preview" aria-hidden="true"></span>
+            <button type="button" class="ghost" id="detailIconChoose">Выбрать иконку</button>
+            <button type="button" class="ghost" id="detailIconClear">Убрать</button>
+          </span>
+        </div>
+        <div class="details-row details-row--font" id="detailFontRow" hidden>
+          <span class="details-label">Шрифт подписи</span>
+          <span class="details-value details-font-controls">
+            <button type="button" class="ghost" id="detailFontDecrease" aria-label="Уменьшить шрифт">−</button>
+            <span class="details-font-value" id="detailFontValue">—</span>
+            <button type="button" class="ghost" id="detailFontIncrease" aria-label="Увеличить шрифт">+</button>
+          </span>
+        </div>
+        <div class="details-actions">
+          <button type="button" id="deleteSelected" class="danger" disabled>Удалить</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div id="settingsModal" class="settings-modal" aria-hidden="true">
+    <div class="settings-modal__backdrop" data-settings-dismiss></div>
+    <div
+      class="settings-modal__dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settingsTitle"
+    >
+      <header class="settings-modal__header">
+        <h3 id="settingsTitle">Настройки отображения</h3>
+        <button type="button" class="settings-modal__close" data-settings-dismiss title="Закрыть">×</button>
+      </header>
+      <form id="settingsForm" class="settings-modal__form">
+        <fieldset>
+          <legend>Размер шрифта</legend>
+          <div class="settings-font-size" role="group" aria-label="Размер шрифта">
+            <button
+              type="button"
+              class="ghost settings-font-size__button"
+              data-font-decrease
+              aria-label="Уменьшить размер шрифта"
+            >
+              −
+            </button>
+            <span class="settings-font-size__value" data-font-size-value>16 px</span>
+            <button
+              type="button"
+              class="ghost settings-font-size__button"
+              data-font-increase
+              aria-label="Увеличить размер шрифта"
+            >
+              +
+            </button>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Цветовая тема</legend>
+          <label><input type="radio" name="theme" value="light" /> Светлая</label>
+          <label><input type="radio" name="theme" value="dark" /> Тёмная</label>
+        </fieldset>
+        <div class="settings-modal__actions">
+          <button type="button" class="secondary" data-settings-dismiss>Закрыть</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="iconPickerModal" class="icon-picker" aria-hidden="true">
+    <div class="icon-picker__backdrop" data-icon-dismiss></div>
+    <div class="icon-picker__dialog" role="dialog" aria-modal="true" aria-labelledby="iconPickerTitle">
+      <header class="icon-picker__header">
+        <h3 id="iconPickerTitle">Выбор иконки</h3>
+        <button type="button" class="icon-picker__close" data-icon-dismiss title="Закрыть">×</button>
+      </header>
+      <div class="icon-picker__body">
+        <div id="iconPickerGroups" class="icon-picker__groups"></div>
+      </div>
+      <footer class="icon-picker__footer">
+        <button type="button" class="ghost" data-icon-dismiss>Отмена</button>
+        <button type="button" class="primary" id="iconPickerApply" disabled>Применить</button>
+      </footer>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
