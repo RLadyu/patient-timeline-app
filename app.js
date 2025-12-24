@@ -227,6 +227,26 @@ const state = {
       result: 'Отрицательный рост'
     }
   ],
+  surgery: [
+    {
+      id: nextId('surgery'),
+      date: '2023-02-05',
+      time: '16:20',
+      title: 'Санация плевральной полости',
+      comment: 'Дренирование, контроль гемостаза',
+      isFlagged: false
+    }
+  ],
+  radiology: [
+    {
+      id: nextId('radiology'),
+      date: '2023-02-12',
+      time: '08:45',
+      title: 'КТ органов грудной клетки',
+      comment: 'Положительная рентгенологическая динамика',
+      isFlagged: false
+    }
+  ],
   events: [
     {
       id: nextId('event'),
@@ -286,6 +306,8 @@ const COLORS = {
   therapy: '#16a34a',
   support: '#0f172a',
   endoscopy: '#1d4ed8',
+  surgery: '#a855f7',
+  radiology: '#0284c7',
   neuro: '#8b5cf6',
   liver: '#f97316',
   lab: '#0ea5e9',
@@ -305,6 +327,8 @@ const DETAIL_TYPE_COLORS = {
   'Лекарственная терапия': COLORS.therapy,
   'Терапия сопровождения': SUPPORT_OUTLINE_COLOR,
   'Эндоскопическая процедура': COLORS.endoscopy,
+  'Хирургия': COLORS.surgery,
+  'Рентгенология': COLORS.radiology,
   'Неврологический статус': COLORS.neuro,
   'ЛПП': COLORS.liver,
   'Лабораторная диагностика': COLORS.lab,
@@ -329,6 +353,10 @@ const SVG_STYLE_TEXT = `
   .endoscopy-title{font-size:calc(12px * var(--font-scale));font-weight:700;font-family:'Inter','Segoe UI',sans-serif;fill:${ENDOSCOPY_TITLE_COLOR};}
   .endoscopy-intervention{font-size:calc(12px * var(--font-scale));font-family:'Inter','Segoe UI',sans-serif;fill:${ENDOSCOPY_TEXT_COLOR};}
   .endoscopy-complication{font-size:calc(12px * var(--font-scale));font-family:'Inter','Segoe UI',sans-serif;fill:${ENDOSCOPY_TEXT_COLOR};}
+  .surgery-marker{fill:${COLORS.surgery};stroke:#ffffff;stroke-width:2;}
+  .surgery-label{font-size:calc(12px * var(--font-scale));font-family:'Inter','Segoe UI',sans-serif;fill:#000000;}
+  .radiology-marker{fill:${COLORS.radiology};stroke:#ffffff;stroke-width:2;}
+  .radiology-label{font-size:calc(12px * var(--font-scale));font-family:'Inter','Segoe UI',sans-serif;fill:#000000;}
   .neuro-marker{fill:${COLORS.neuro};stroke:#ffffff;stroke-width:2;}
   .neuro-label{font-size:calc(12px * var(--font-scale));font-family:'Inter','Segoe UI',sans-serif;fill:#000000;}
   .liver-bar{fill:${COLORS.liver};opacity:0.9;}
@@ -353,6 +381,8 @@ const LEGEND_ITEMS = [
   { key: 'therapy', label: 'Лекарственная терапия (ЛТ)' },
   { key: 'support', label: 'Терапия сопровождения' },
   { key: 'endoscopy', label: 'Эндоскопическая процедура' },
+  { key: 'surgery', label: 'Хирургия' },
+  { key: 'radiology', label: 'Рентгенология' },
   { key: 'neuro', label: 'Неврологический статус' },
   { key: 'liver', label: 'ЛПП' },
   { key: 'lab', label: 'Лабораторная диагностика' },
@@ -1126,6 +1156,22 @@ function getEventDisplayLabel(item) {
   return getEventBaseLabel(item);
 }
 
+function getSurgeryDisplayLabel(item) {
+  if (!item) {
+    return '';
+  }
+  const override = typeof item.chartLabelOverride === 'string' ? item.chartLabelOverride.trim() : '';
+  return override || item.title || '';
+}
+
+function getRadiologyDisplayLabel(item) {
+  if (!item) {
+    return '';
+  }
+  const override = typeof item.chartLabelOverride === 'string' ? item.chartLabelOverride.trim() : '';
+  return override || item.title || '';
+}
+
 function findEventIcon(key) {
   if (!key) return null;
   return EVENT_ICON_MAP.get(key) || null;
@@ -1726,17 +1772,19 @@ const OPTIONAL_IMPORT_HEADERS = new Set(
   )
 );
 const DATA_EXPORT_FILENAME = 'timeline-data.csv';
-const DATA_EXPORT_VERSION = '1.8.0';
+const DATA_EXPORT_VERSION = '1.9.0';
 
 const EXPORT_TYPE_ORDER = new Map([
   ['temperature', 0],
   ['therapy', 1],
   ['support', 2],
   ['endoscopy', 3],
-  ['neuro', 4],
-  ['liver', 5],
-  ['lab', 6],
-  ['event', 7]
+  ['surgery', 4],
+  ['radiology', 5],
+  ['neuro', 6],
+  ['liver', 7],
+  ['lab', 8],
+  ['event', 9]
 ]);
 
 const EXPORT_TYPE_LABELS = {
@@ -1744,6 +1792,8 @@ const EXPORT_TYPE_LABELS = {
   therapy: 'Лекарственная терапия',
   support: 'Терапия сопровождения',
   endoscopy: 'Эндоскопическая процедура',
+  surgery: 'Хирургия',
+  radiology: 'Рентгенология',
   neuro: 'Неврологический статус',
   liver: 'ЛПП',
   lab: 'Лабораторная диагностика',
@@ -1765,11 +1815,57 @@ const IMPORT_TYPE_SYNONYMS = new Map([
   ['бронхоскопия', 'endoscopy'],
   ['диагностическая бронхоскопия', 'endoscopy'],
   ['терапевтическая бронхоскопия', 'endoscopy'],
+  ['хирургия', 'surgery'],
+  ['операция', 'surgery'],
+  ['хирургическое лечение', 'surgery'],
+  ['рентгенология', 'radiology'],
+  ['рентген', 'radiology'],
+  ['кт', 'radiology'],
   ['событие', 'event'],
   ['диагноз', 'event']
 ]);
 
 const MAX_HISTORY_ENTRIES = 50;
+
+const DIRECTIONS = [
+  { id: 'clinical', label: 'Клинические показатели' },
+  { id: 'therapy', label: 'Терапия' },
+  { id: 'endoscopy', label: 'Эндоскопия' },
+  { id: 'surgery', label: 'Хирургия' },
+  { id: 'radiology', label: 'Рентгенология' },
+  { id: 'diagnostics', label: 'Диагностика' },
+  { id: 'events', label: 'События' }
+];
+
+const PARAMETER_CATALOG = {
+  clinical: [
+    { id: 'temperature', label: 'Температура', trackKey: 'temperature', formKind: 'temperature' },
+    { id: 'neuro', label: 'Неврологический статус (НС)', trackKey: 'neuro', formKind: 'neuro' },
+    { id: 'liver', label: 'ЛПП', trackKey: 'liver', formKind: 'liver' }
+  ],
+  therapy: [
+    { id: 'therapy', label: 'Лекарственная терапия (ЛТ)', trackKey: 'therapy', formKind: 'therapy' },
+    { id: 'support', label: 'Терапия сопровождения', trackKey: 'support', formKind: 'support' }
+  ],
+  endoscopy: [
+    { id: 'endoscopy', label: 'Эндоскопическая процедура', trackKey: 'endoscopy', formKind: 'endoscopy' }
+  ],
+  surgery: [
+    { id: 'surgery', label: 'Хирургия', trackKey: 'surgery', formKind: 'surgery' }
+  ],
+  radiology: [
+    { id: 'radiology', label: 'Рентгенология', trackKey: 'radiology', formKind: 'radiology' }
+  ],
+  diagnostics: [
+    { id: 'lab', label: 'Лабораторная диагностика', trackKey: 'lab', formKind: 'lab' }
+  ],
+  events: [
+    { id: 'event', label: 'Событие/диагноз', trackKey: 'event', formKind: 'event' }
+  ]
+};
+
+const PARAMETER_BY_ID = new Map();
+const PARAMETER_DIRECTION_BY_ID = new Map();
 
 const formConfig = {
   temperature: [
@@ -1860,6 +1956,42 @@ const formConfig = {
       required: false,
       placeholder: 'Дополнительные сведения: переносимость, цели назначения'
     },
+    {
+      type: 'checkbox',
+      name: 'isFlagged',
+      label: 'Выделить красным (проблемный участок)',
+      required: false
+    }
+  ],
+  surgery: [
+    { type: 'date', name: 'date', label: 'Дата', required: true },
+    { type: 'time', name: 'time', label: 'Время', required: false },
+    {
+      type: 'text',
+      name: 'title',
+      label: 'Название вмешательства',
+      required: true,
+      placeholder: 'Например: санация плевральной полости'
+    },
+    { type: 'textarea', name: 'comment', label: 'Комментарий', required: false },
+    {
+      type: 'checkbox',
+      name: 'isFlagged',
+      label: 'Выделить красным (проблемный участок)',
+      required: false
+    }
+  ],
+  radiology: [
+    { type: 'date', name: 'date', label: 'Дата', required: true },
+    { type: 'time', name: 'time', label: 'Время', required: false },
+    {
+      type: 'text',
+      name: 'title',
+      label: 'Название исследования',
+      required: true,
+      placeholder: 'Например: КТ органов грудной клетки'
+    },
+    { type: 'textarea', name: 'comment', label: 'Комментарий', required: false },
     {
       type: 'checkbox',
       name: 'isFlagged',
@@ -2369,6 +2501,8 @@ const TRACK_DEFINITIONS = [
   { key: 'therapy', label: 'ЛТ', minHeight: THERAPY_MIN_HEIGHT },
   { key: 'support', label: 'Терапия сопровождения', minHeight: SUPPORT_MIN_HEIGHT },
   { key: 'endoscopy', label: 'Эндоскопическая процедура', minHeight: ENDOSCOPY_MIN_HEIGHT },
+  { key: 'surgery', label: 'Хирургия', minHeight: 130 },
+  { key: 'radiology', label: 'Рентгенология', minHeight: 130 },
   { key: 'neuro', label: 'НС', minHeight: 120 },
   { key: 'liver', label: 'ЛПП', minHeight: 130 },
   { key: 'lab', label: 'Лабораторная диагностика', minHeight: 140 },
@@ -2380,17 +2514,28 @@ const PARAMETER_GROUPS = [
     label: 'Клинические показатели',
     items: [
       { key: 'temperature', label: 'Температура' },
-      { key: 'neuro', label: 'Неврологический статус (НС)' }
+      { key: 'neuro', label: 'Неврологический статус (НС)' },
+      { key: 'liver', label: 'ЛПП' }
     ]
   },
   {
-    label: 'Терапия и безопасность',
+    label: 'Терапия',
     items: [
       { key: 'therapy', label: 'Лекарственная терапия (ЛТ)' },
-      { key: 'support', label: 'Терапия сопровождения' },
-      { key: 'endoscopy', label: 'Эндоскопическая процедура' },
-      { key: 'liver', label: 'ЛПП' }
+      { key: 'support', label: 'Терапия сопровождения' }
     ]
+  },
+  {
+    label: 'Эндоскопия',
+    items: [{ key: 'endoscopy', label: 'Эндоскопическая процедура' }]
+  },
+  {
+    label: 'Хирургия',
+    items: [{ key: 'surgery', label: 'Хирургия' }]
+  },
+  {
+    label: 'Рентгенология',
+    items: [{ key: 'radiology', label: 'Рентгенология' }]
   },
   {
     label: 'Диагностика и события',
@@ -2403,6 +2548,35 @@ const PARAMETER_GROUPS = [
 
 const TRACK_KEYS = TRACK_DEFINITIONS.map((track) => track.key);
 const trackVisibility = new Map(TRACK_KEYS.map((key) => [key, true]));
+
+function buildParameterCatalogIndex() {
+  PARAMETER_BY_ID.clear();
+  PARAMETER_DIRECTION_BY_ID.clear();
+  Object.entries(PARAMETER_CATALOG).forEach(([directionKey, params]) => {
+    (params || []).forEach((param) => {
+      if (!param || !param.id) {
+        return;
+      }
+      PARAMETER_BY_ID.set(param.id, param);
+      PARAMETER_DIRECTION_BY_ID.set(param.id, directionKey);
+    });
+  });
+}
+
+function getParameterConfig(parameterId) {
+  if (!parameterId) return null;
+  return PARAMETER_BY_ID.get(parameterId) || null;
+}
+
+function getDirectionForParameter(parameterId) {
+  if (!parameterId) return '';
+  return PARAMETER_DIRECTION_BY_ID.get(parameterId) || '';
+}
+
+function getParametersForDirection(directionKey) {
+  if (!directionKey) return [];
+  return PARAMETER_CATALOG[directionKey] || [];
+}
 
 const STEP_X_DEFAULT = 150;
 const STEP_X_MIN = 80;
@@ -2469,6 +2643,7 @@ const panContext = {
 
 const rootElement = document.documentElement;
 const bodyElement = document.body;
+const directionSelect = document.getElementById('directionSelect');
 const parameterSelect = document.getElementById('parameterSelect');
 const dynamicFields = document.getElementById('dynamicFields');
 const entryForm = document.getElementById('entryForm');
@@ -3772,6 +3947,8 @@ function cloneStateData(source = state) {
     labDiagnostics: Array.isArray(source.labDiagnostics)
       ? source.labDiagnostics.map((item) => ({ ...item }))
       : [],
+    surgery: Array.isArray(source.surgery) ? source.surgery.map((item) => ({ ...item })) : [],
+    radiology: Array.isArray(source.radiology) ? source.radiology.map((item) => ({ ...item })) : [],
     events: Array.isArray(source.events) ? source.events.map((item) => ({ ...item })) : []
   };
 }
@@ -3806,6 +3983,10 @@ function hasDataForTrackKey(key, source = state) {
       return Array.isArray(source.supportiveTherapy) && source.supportiveTherapy.length > 0;
     case 'endoscopy':
       return Array.isArray(source.endoscopy) && source.endoscopy.length > 0;
+    case 'surgery':
+      return Array.isArray(source.surgery) && source.surgery.length > 0;
+    case 'radiology':
+      return Array.isArray(source.radiology) && source.radiology.length > 0;
     case 'neuro':
       return Array.isArray(source.neuro) && source.neuro.length > 0;
     case 'liver':
@@ -3848,6 +4029,8 @@ function applyTrackVisibilitySnapshot(entries, { fallbackToData = false } = {}) 
 
   renderParameterVisibilityOptions();
   syncParameterSelectOptions();
+  const activeParam = ensureActiveParameterSelection();
+  syncDirectionForParameter(activeParam);
   closeParameterVisibilityDropdown();
   return anyVisible;
 }
@@ -3876,6 +4059,8 @@ function syncIdCounterWithState(source = state) {
   data.neuro.forEach((item) => consider(item.id));
   data.liver.forEach((item) => consider(item.id));
   data.labDiagnostics.forEach((item) => consider(item.id));
+  data.surgery.forEach((item) => consider(item.id));
+  data.radiology.forEach((item) => consider(item.id));
   data.events.forEach((item) => consider(item.id));
   data.therapy.forEach((course) => {
     consider(course.id);
@@ -3904,6 +4089,8 @@ function restoreStateSnapshot(snapshot) {
   state.neuro = cloned.neuro;
   state.liver = cloned.liver;
   state.labDiagnostics = cloned.labDiagnostics;
+  state.surgery = cloned.surgery;
+  state.radiology = cloned.radiology;
   state.events = cloned.events;
   state.timelineDates = [];
   therapyDraft = createEmptyTherapyDraft();
@@ -3919,11 +4106,13 @@ function restoreStateSnapshot(snapshot) {
   let targetType = snapshot.parameterType || '';
   if (parameterSelect) {
     if (targetType) {
-      parameterSelect.value = targetType;
+      syncDirectionForParameter(targetType);
     }
-    if (!targetType || !isTrackVisible(targetType)) {
+    const config = getParameterConfig(targetType);
+    const trackKey = config ? config.trackKey : targetType;
+    if (!targetType || !isTrackVisible(trackKey)) {
       targetType = ensureActiveParameterSelection();
-      parameterSelect.value = targetType || '';
+      syncDirectionForParameter(targetType);
     }
   } else if (!targetType || !isTrackVisible(targetType)) {
     targetType = ensureActiveParameterSelection();
@@ -3945,7 +4134,9 @@ function syncParameterSelectOptions() {
   if (!parameterSelect) return;
   Array.from(parameterSelect.options).forEach((option) => {
     if (!option.value) return;
-    const visible = isTrackVisible(option.value);
+    const config = getParameterConfig(option.value);
+    const trackKey = config ? config.trackKey : option.value;
+    const visible = isTrackVisible(trackKey);
     option.disabled = !visible;
     option.classList.toggle('is-disabled', !visible);
   });
@@ -3954,12 +4145,75 @@ function syncParameterSelectOptions() {
 function ensureActiveParameterSelection() {
   if (!parameterSelect) return '';
   const current = parameterSelect.value;
-  if (current && isTrackVisible(current)) {
-    return current;
+  if (current) {
+    const config = getParameterConfig(current);
+    const trackKey = config ? config.trackKey : current;
+    if (trackKey && isTrackVisible(trackKey)) {
+      return current;
+    }
   }
-  const fallback = getFirstVisibleTrackKey();
+  const fallbackOption = Array.from(parameterSelect.options).find((option) => {
+    if (!option.value) return false;
+    const config = getParameterConfig(option.value);
+    const trackKey = config ? config.trackKey : option.value;
+    return isTrackVisible(trackKey);
+  });
+  let fallback = fallbackOption ? fallbackOption.value : '';
+  if (!fallback && directionSelect) {
+    const fallbackEntry = DIRECTIONS.map((direction) => {
+      const params = getParametersForDirection(direction.id);
+      const param = params.find((entry) => isTrackVisible(entry.trackKey));
+      return param ? { direction: direction.id, param: param.id } : null;
+    }).find(Boolean);
+    if (fallbackEntry) {
+      directionSelect.value = fallbackEntry.direction;
+      populateParameterSelect(fallbackEntry.direction, { selectedId: fallbackEntry.param });
+      fallback = fallbackEntry.param;
+    }
+  }
   parameterSelect.value = fallback || '';
   return parameterSelect.value;
+}
+
+function populateDirectionSelect(preferredDirection = '') {
+  if (!directionSelect) return;
+  directionSelect.innerHTML = '';
+  DIRECTIONS.forEach((direction) => {
+    const option = document.createElement('option');
+    option.value = direction.id;
+    option.textContent = direction.label;
+    directionSelect.appendChild(option);
+  });
+  const fallback = preferredDirection || DIRECTIONS[0]?.id || '';
+  directionSelect.value = fallback;
+}
+
+function populateParameterSelect(directionKey, { selectedId = '' } = {}) {
+  if (!parameterSelect) return;
+  parameterSelect.innerHTML = '';
+  const params = getParametersForDirection(directionKey);
+  params.forEach((param) => {
+    const option = document.createElement('option');
+    option.value = param.id;
+    option.textContent = param.label;
+    parameterSelect.appendChild(option);
+  });
+  syncParameterSelectOptions();
+  const preferred = selectedId && params.some((param) => param.id === selectedId) ? selectedId : '';
+  if (preferred) {
+    parameterSelect.value = preferred;
+  } else {
+    ensureActiveParameterSelection();
+  }
+}
+
+function syncDirectionForParameter(parameterId) {
+  if (!directionSelect) return;
+  const direction = getDirectionForParameter(parameterId) || directionSelect.value || DIRECTIONS[0]?.id || '';
+  if (direction && directionSelect.value !== direction) {
+    directionSelect.value = direction;
+  }
+  populateParameterSelect(direction, { selectedId: parameterId });
 }
 
 function updateFormModeIndicators(type) {
@@ -3992,6 +4246,10 @@ function getEditingSnapshot(type) {
       return state.liver.find((item) => item.id === editContext.id) || null;
     case 'lab':
       return state.labDiagnostics.find((item) => item.id === editContext.id) || null;
+    case 'surgery':
+      return state.surgery.find((item) => item.id === editContext.id) || null;
+    case 'radiology':
+      return state.radiology.find((item) => item.id === editContext.id) || null;
     case 'event':
       return state.events.find((item) => item.id === editContext.id) || null;
     case 'therapy': {
@@ -4039,7 +4297,7 @@ function enterEditMode(editInfo) {
 
   editContext = { ...editInfo };
   if (parameterSelect) {
-    parameterSelect.value = type;
+    syncDirectionForParameter(type);
   }
   renderDynamicFields(type);
   updateFormModeIndicators(type);
@@ -4055,7 +4313,8 @@ function handleTrackToggleChange(event) {
   closeInlineEditor();
   setTrackVisibility(key, visible);
   syncParameterSelectOptions();
-  ensureActiveParameterSelection();
+  const activeParam = ensureActiveParameterSelection();
+  syncDirectionForParameter(activeParam);
   renderTimeline();
   renderDynamicFields(parameterSelect.value);
 }
@@ -4072,7 +4331,8 @@ function initializeTrackToggles() {
   });
   updateVisibilityTriggerLabel();
   syncParameterSelectOptions();
-  ensureActiveParameterSelection();
+  const activeParam = ensureActiveParameterSelection();
+  syncDirectionForParameter(activeParam);
 }
 
 function waitForFonts() {
@@ -4308,10 +4568,13 @@ function createField(field) {
 
 function renderDynamicFields(type) {
   const currentType = type || ensureActiveParameterSelection();
+  const parameterConfig = getParameterConfig(currentType);
+  const trackKey = parameterConfig ? parameterConfig.trackKey : currentType;
+  const formKind = parameterConfig ? parameterConfig.formKind : currentType;
   dynamicFields.innerHTML = '';
-  updateFormModeIndicators(currentType);
+  updateFormModeIndicators(trackKey);
 
-  if (!currentType) {
+  if (!currentType || !trackKey) {
     if (submitButton) {
       submitButton.disabled = true;
     }
@@ -4322,7 +4585,7 @@ function renderDynamicFields(type) {
     return;
   }
 
-  const visible = isTrackVisible(currentType);
+  const visible = isTrackVisible(trackKey);
   if (!visible) {
     if (submitButton) {
       submitButton.disabled = true;
@@ -4338,25 +4601,25 @@ function renderDynamicFields(type) {
     submitButton.disabled = false;
   }
 
-  let editingSnapshot = getEditingSnapshot(currentType);
-  if (editContext && editContext.type === currentType && !editingSnapshot) {
+  let editingSnapshot = getEditingSnapshot(trackKey);
+  if (editContext && editContext.type === trackKey && !editingSnapshot) {
     editContext = null;
-    updateFormModeIndicators(currentType);
+    updateFormModeIndicators(trackKey);
   }
 
-  if (currentType === 'therapy') {
+  if (formKind === 'therapy') {
     renderTherapyDynamicFields(editingSnapshot);
-    updateFormModeIndicators(currentType);
+    updateFormModeIndicators(trackKey);
     return;
   }
 
-  if (currentType === 'endoscopy') {
+  if (formKind === 'endoscopy') {
     renderEndoscopyDynamicFields(editingSnapshot || null);
-    updateFormModeIndicators(currentType);
+    updateFormModeIndicators(trackKey);
     return;
   }
 
-  const fields = formConfig[currentType] || [];
+  const fields = formConfig[formKind] || [];
   fields.forEach((field) => {
     const fieldElement = createField(field);
     dynamicFields.appendChild(fieldElement);
@@ -4391,24 +4654,27 @@ function renderDynamicFields(type) {
     }
   });
 
-  updateFormModeIndicators(currentType);
+  updateFormModeIndicators(trackKey);
 }
 
 function collectFormData(type) {
-  if (!type || !isTrackVisible(type)) {
+  const parameterConfig = getParameterConfig(type);
+  const trackKey = parameterConfig ? parameterConfig.trackKey : type;
+  const formKind = parameterConfig ? parameterConfig.formKind : type;
+  if (!type || !trackKey || !isTrackVisible(trackKey)) {
     alert('Отметьте параметр в списке выше, чтобы работать с данными.');
     return null;
   }
 
-  if (type === 'therapy') {
+  if (formKind === 'therapy') {
     return collectTherapyFormData();
   }
 
-  if (type === 'endoscopy') {
+  if (formKind === 'endoscopy') {
     return collectEndoscopyFormData();
   }
 
-  const fields = formConfig[type] || [];
+  const fields = formConfig[formKind] || [];
   const payload = {};
 
   for (const field of fields) {
@@ -4962,7 +5228,7 @@ function handleTherapySupportButtonClick(event) {
   closeParameterVisibilityDropdown();
   syncParameterSelectOptions();
   if (parameterSelect) {
-    parameterSelect.value = 'support';
+    syncDirectionForParameter('support');
   }
   renderDynamicFields('support');
   renderTimeline();
@@ -5609,6 +5875,12 @@ function updateTimelineDates() {
   if (isTrackVisible('endoscopy')) {
     state.endoscopy.forEach((item) => dates.add(item.date));
   }
+  if (isTrackVisible('surgery')) {
+    state.surgery.forEach((item) => dates.add(item.date));
+  }
+  if (isTrackVisible('radiology')) {
+    state.radiology.forEach((item) => dates.add(item.date));
+  }
   if (isTrackVisible('neuro')) {
     state.neuro.forEach((item) => dates.add(item.date));
   }
@@ -6040,6 +6312,10 @@ function resolveFontTargetItem(target) {
       return state.supportiveTherapy.find((entry) => entry.id === target.id);
     case 'endoscopy':
       return state.endoscopy.find((entry) => entry.id === target.id);
+    case 'surgery':
+      return state.surgery.find((entry) => entry.id === target.id);
+    case 'radiology':
+      return state.radiology.find((entry) => entry.id === target.id);
     case 'event':
       return state.events.find((entry) => entry.id === target.id);
     default:
@@ -6645,6 +6921,18 @@ function applyDragDelta(context, deltaSteps) {
       item.date = dates[newStartIndex];
       return true;
     }
+    case 'surgery': {
+      const item = state.surgery.find((entry) => entry.id === context.config.id);
+      if (!item) return false;
+      item.date = dates[newStartIndex];
+      return true;
+    }
+    case 'radiology': {
+      const item = state.radiology.find((entry) => entry.id === context.config.id);
+      if (!item) return false;
+      item.date = dates[newStartIndex];
+      return true;
+    }
     case 'support': {
       const item = state.supportiveTherapy.find((entry) => entry.id === context.config.id);
       if (!item) return false;
@@ -7245,6 +7533,8 @@ function renderTimeline() {
   renderTherapy(tracks.find((track) => track.key === 'therapy'), dates, chartWidth, therapyMetrics);
   renderSupportiveTherapy(tracks.find((track) => track.key === 'support'), dates, chartWidth, supportMetrics);
   renderEndoscopy(tracks.find((track) => track.key === 'endoscopy'), dates, chartWidth, endoscopyMetrics);
+  renderSurgery(tracks.find((track) => track.key === 'surgery'), dates);
+  renderRadiology(tracks.find((track) => track.key === 'radiology'), dates);
   renderNeuro(tracks.find((track) => track.key === 'neuro'), dates);
   renderLiver(tracks.find((track) => track.key === 'liver'), dates, chartWidth);
   renderLabDiagnostics(tracks.find((track) => track.key === 'lab'), dates);
@@ -8219,6 +8509,149 @@ function applyEndoscopySummaryOverride(entryId, newText) {
   return true;
 }
 
+function renderSurgery(track, dates) {
+  if (!track) return;
+  const sorted = [...state.surgery].sort((a, b) => parseDateTime(a.date, a.time) - parseDateTime(b.date, b.time));
+  if (!sorted.length) return;
+
+  const centerY = track.top + track.height / 2;
+  const markerRadius = 8;
+
+  sorted.forEach((item) => {
+    const x = getXPosition(item.date, dates);
+    const fontScale = getEffectiveChartFontScale(item);
+    const marker = createSvgElement('circle', {
+      cx: x,
+      cy: centerY,
+      r: markerRadius,
+      class: 'surgery-marker'
+    });
+    timelineSvg.appendChild(marker);
+
+    const label = createSvgElement('text', {
+      x: x + markerRadius + 8,
+      y: centerY + 4,
+      class: 'surgery-label'
+    });
+    label.textContent = getSurgeryDisplayLabel(item);
+    label.style.fontSize = `${12 * fontScale}px`;
+    timelineSvg.appendChild(label);
+
+    const detail = {
+      type: 'Хирургия',
+      date: item.date,
+      time: item.time,
+      title: item.title,
+      comment: item.comment || '',
+      color: COLORS.surgery,
+      isFlagged: Boolean(item.isFlagged),
+      deleteInfo: { type: 'surgery', id: item.id },
+      fontTarget: { type: 'surgery', id: item.id }
+    };
+
+    const editInfo = { type: 'surgery', id: item.id };
+    attachDetails(marker, detail, marker, item.id, editInfo);
+    attachDetails(label, detail, marker, item.id, editInfo, {
+      inlineEditor: {
+        fieldNames: ['title', 'comment'],
+        preferredWidth: 260,
+        focusField: 'title',
+        compact: true
+      },
+      highlightInlineEditor: null
+    });
+
+    if (item.isFlagged) {
+      marker.classList.add('is-flagged-shape');
+      label.classList.add('is-flagged-text');
+      const indicator = appendFlagIndicator(x - markerRadius - 8, centerY, { anchor: 'end' });
+      if (indicator) {
+        indicator.classList.add('is-flagged-text');
+        attachDetails(indicator, detail, marker, item.id, editInfo);
+      }
+    }
+
+    registerDraggable([marker, label], {
+      type: 'surgery',
+      id: item.id,
+      startDate: item.date
+    });
+  });
+}
+
+function renderRadiology(track, dates) {
+  if (!track) return;
+  const sorted = [...state.radiology].sort((a, b) => parseDateTime(a.date, a.time) - parseDateTime(b.date, b.time));
+  if (!sorted.length) return;
+
+  const centerY = track.top + track.height / 2;
+  const markerSize = 16;
+
+  sorted.forEach((item) => {
+    const x = getXPosition(item.date, dates);
+    const fontScale = getEffectiveChartFontScale(item);
+    const marker = createSvgElement('rect', {
+      x: x - markerSize / 2,
+      y: centerY - markerSize / 2,
+      width: markerSize,
+      height: markerSize,
+      rx: 4,
+      ry: 4,
+      class: 'radiology-marker'
+    });
+    timelineSvg.appendChild(marker);
+
+    const label = createSvgElement('text', {
+      x: x + markerSize / 2 + 8,
+      y: centerY + 4,
+      class: 'radiology-label'
+    });
+    label.textContent = getRadiologyDisplayLabel(item);
+    label.style.fontSize = `${12 * fontScale}px`;
+    timelineSvg.appendChild(label);
+
+    const detail = {
+      type: 'Рентгенология',
+      date: item.date,
+      time: item.time,
+      title: item.title,
+      comment: item.comment || '',
+      color: COLORS.radiology,
+      isFlagged: Boolean(item.isFlagged),
+      deleteInfo: { type: 'radiology', id: item.id },
+      fontTarget: { type: 'radiology', id: item.id }
+    };
+
+    const editInfo = { type: 'radiology', id: item.id };
+    attachDetails(marker, detail, marker, item.id, editInfo);
+    attachDetails(label, detail, marker, item.id, editInfo, {
+      inlineEditor: {
+        fieldNames: ['title', 'comment'],
+        preferredWidth: 260,
+        focusField: 'title',
+        compact: true
+      },
+      highlightInlineEditor: null
+    });
+
+    if (item.isFlagged) {
+      marker.classList.add('is-flagged-shape');
+      label.classList.add('is-flagged-text');
+      const indicator = appendFlagIndicator(x - markerSize - 6, centerY, { anchor: 'end' });
+      if (indicator) {
+        indicator.classList.add('is-flagged-text');
+        attachDetails(indicator, detail, marker, item.id, editInfo);
+      }
+    }
+
+    registerDraggable([marker, label], {
+      type: 'radiology',
+      id: item.id,
+      startDate: item.date
+    });
+  });
+}
+
 function renderNeuro(track, dates) {
   if (!track) return;
   const sorted = [...state.neuro].sort((a, b) => parseDate(a.date) - parseDate(b.date));
@@ -8579,6 +9012,10 @@ function legendItemHasData(key) {
       return state.liver.length > 0;
     case 'lab':
       return state.labDiagnostics.length > 0;
+    case 'surgery':
+      return state.surgery.length > 0;
+    case 'radiology':
+      return state.radiology.length > 0;
     case 'event':
       return state.events.length > 0;
     default:
@@ -8774,6 +9211,27 @@ function renderLegend(chartWidth, chartHeight, bottomMargin, visibleTrackKeys = 
           fill: getEndoscopyFillColor(),
           stroke: COLORS.endoscopy,
           'stroke-width': 1.5
+        }));
+        break;
+      }
+      case 'surgery': {
+        legendGroup.appendChild(createSvgElement('circle', {
+          cx: cursorX + iconWidth / 2,
+          cy: cursorY,
+          r: 6,
+          fill: COLORS.surgery
+        }));
+        break;
+      }
+      case 'radiology': {
+        legendGroup.appendChild(createSvgElement('rect', {
+          x: cursorX + 2,
+          y: cursorY - 8,
+          width: iconWidth - 4,
+          height: 16,
+          rx: 4,
+          ry: 4,
+          fill: COLORS.radiology
         }));
         break;
       }
@@ -9036,7 +9494,7 @@ function getExportRowTimestamp(row) {
     return null;
   }
   const type = row.type;
-  if (type === 'temperature' || type === 'neuro' || type === 'lab' || type === 'event') {
+  if (type === 'temperature' || type === 'neuro' || type === 'lab' || type === 'event' || type === 'surgery' || type === 'radiology') {
     const dateTime = parseDateTime(row.date, row.time);
     if (dateTime) {
       return dateTime.getTime();
@@ -9279,6 +9737,86 @@ function buildExportRows() {
       courseComment: '',
       courseStartDate: '',
       courseEndDate: '',
+      chartHeightOverride: '',
+      chartOffsetY: '',
+      chartFontScale: item.chartFontScale || '',
+      iconKey: '',
+      iconOffsetX: '',
+      iconOffsetY: '',
+      flagged: Boolean(item.isFlagged),
+      enabled: true
+    });
+  });
+
+  state.surgery.forEach((item) => {
+    rows.push({
+      type: 'surgery',
+      id: item.id || '',
+      parentId: '',
+      date: item.date || '',
+      time: item.time || '',
+      startDate: '',
+      endDate: '',
+      value: '',
+      title: item.title || '',
+      status: '',
+      comment: item.comment || '',
+      testType: '',
+      result: '',
+      manipulationType: '',
+      interventions: '',
+      complications: '',
+      medicationName: '',
+      dosage: '',
+      note: '',
+      frequencyCount: '',
+      frequencyUnit: '',
+      weekdays: '',
+      courseComment: '',
+      courseStartDate: '',
+      courseEndDate: '',
+      chartLabelOverride: item.chartLabelOverride || '',
+      chartSummaryOverride: '',
+      chartHeightOverride: '',
+      chartOffsetY: '',
+      chartFontScale: item.chartFontScale || '',
+      iconKey: '',
+      iconOffsetX: '',
+      iconOffsetY: '',
+      flagged: Boolean(item.isFlagged),
+      enabled: true
+    });
+  });
+
+  state.radiology.forEach((item) => {
+    rows.push({
+      type: 'radiology',
+      id: item.id || '',
+      parentId: '',
+      date: item.date || '',
+      time: item.time || '',
+      startDate: '',
+      endDate: '',
+      value: '',
+      title: item.title || '',
+      status: '',
+      comment: item.comment || '',
+      testType: '',
+      result: '',
+      manipulationType: '',
+      interventions: '',
+      complications: '',
+      medicationName: '',
+      dosage: '',
+      note: '',
+      frequencyCount: '',
+      frequencyUnit: '',
+      weekdays: '',
+      courseComment: '',
+      courseStartDate: '',
+      courseEndDate: '',
+      chartLabelOverride: item.chartLabelOverride || '',
+      chartSummaryOverride: '',
       chartHeightOverride: '',
       chartOffsetY: '',
       chartFontScale: item.chartFontScale || '',
@@ -9654,6 +10192,8 @@ function importDataFromCsv(text) {
     neuro: [],
     liver: [],
     labDiagnostics: [],
+    surgery: [],
+    radiology: [],
     events: []
   };
 
@@ -9741,6 +10281,54 @@ function importDataFromCsv(text) {
           isFlagged: parseCsvBoolean(entry.flagged),
           ...(chartFontScale !== null ? { chartFontScale } : {})
         });
+        break;
+      }
+      case 'surgery': {
+        if (!entry.date || !entry.title) {
+          skippedRows.push({ row: index + 2, reason: 'Хирургия без даты или названия' });
+          break;
+        }
+        const chartFontScale = parseCsvFontScale(entry.chartFontScale);
+        const chartLabelOverride = (entry.chartLabelOverride || '').trim();
+        const surgeryEntry = {
+          id: nextId('surgery'),
+          date: entry.date,
+          time: entry.time || '',
+          title: entry.title,
+          comment: entry.comment || '',
+          isFlagged: parseCsvBoolean(entry.flagged)
+        };
+        if (chartLabelOverride) {
+          surgeryEntry.chartLabelOverride = chartLabelOverride;
+        }
+        if (chartFontScale !== null) {
+          surgeryEntry.chartFontScale = chartFontScale;
+        }
+        nextState.surgery.push(surgeryEntry);
+        break;
+      }
+      case 'radiology': {
+        if (!entry.date || !entry.title) {
+          skippedRows.push({ row: index + 2, reason: 'Рентгенология без даты или названия' });
+          break;
+        }
+        const chartFontScale = parseCsvFontScale(entry.chartFontScale);
+        const chartLabelOverride = (entry.chartLabelOverride || '').trim();
+        const radiologyEntry = {
+          id: nextId('radiology'),
+          date: entry.date,
+          time: entry.time || '',
+          title: entry.title,
+          comment: entry.comment || '',
+          isFlagged: parseCsvBoolean(entry.flagged)
+        };
+        if (chartLabelOverride) {
+          radiologyEntry.chartLabelOverride = chartLabelOverride;
+        }
+        if (chartFontScale !== null) {
+          radiologyEntry.chartFontScale = chartFontScale;
+        }
+        nextState.radiology.push(radiologyEntry);
         break;
       }
       case 'event': {
@@ -9972,6 +10560,8 @@ function applyImportedState(nextState, options = {}) {
   state.neuro = Array.isArray(nextState.neuro) ? nextState.neuro : [];
   state.liver = Array.isArray(nextState.liver) ? nextState.liver : [];
   state.labDiagnostics = Array.isArray(nextState.labDiagnostics) ? nextState.labDiagnostics : [];
+  state.surgery = Array.isArray(nextState.surgery) ? nextState.surgery : [];
+  state.radiology = Array.isArray(nextState.radiology) ? nextState.radiology : [];
   state.events = Array.isArray(nextState.events) ? nextState.events : [];
   state.timelineDates = [];
   therapyDraft = createEmptyTherapyDraft();
@@ -9990,11 +10580,13 @@ function applyImportedState(nextState, options = {}) {
   renderTimeline();
 
   let targetType = typeof options.parameterType === 'string' ? options.parameterType : '';
-  if (!targetType || !isTrackVisible(targetType)) {
+  const targetConfig = getParameterConfig(targetType);
+  const targetTrackKey = targetConfig ? targetConfig.trackKey : targetType;
+  if (!targetType || !isTrackVisible(targetTrackKey)) {
     targetType = ensureActiveParameterSelection();
   }
   if (parameterSelect) {
-    parameterSelect.value = targetType || parameterSelect.value;
+    syncDirectionForParameter(targetType || parameterSelect.value);
   }
   renderDynamicFields(parameterSelect ? parameterSelect.value : targetType);
 
@@ -10186,6 +10778,28 @@ function handleFormSubmit(event) {
         }
         break;
       }
+      case 'surgery': {
+        const target = state.surgery.find((item) => item.id === editContext.id);
+        if (target) {
+          target.date = data.date;
+          target.time = data.time;
+          target.title = data.title;
+          target.comment = data.comment;
+          target.isFlagged = Boolean(data.isFlagged);
+        }
+        break;
+      }
+      case 'radiology': {
+        const target = state.radiology.find((item) => item.id === editContext.id);
+        if (target) {
+          target.date = data.date;
+          target.time = data.time;
+          target.title = data.title;
+          target.comment = data.comment;
+          target.isFlagged = Boolean(data.isFlagged);
+        }
+        break;
+      }
       case 'event': {
         const target = state.events.find((item) => item.id === editContext.id);
         if (target) {
@@ -10264,6 +10878,26 @@ function handleFormSubmit(event) {
           isFlagged: Boolean(data.isFlagged)
         });
         break;
+      case 'surgery':
+        state.surgery.push({
+          id: nextId('surgery'),
+          date: data.date,
+          time: data.time,
+          title: data.title,
+          comment: data.comment,
+          isFlagged: Boolean(data.isFlagged)
+        });
+        break;
+      case 'radiology':
+        state.radiology.push({
+          id: nextId('radiology'),
+          date: data.date,
+          time: data.time,
+          title: data.title,
+          comment: data.comment,
+          isFlagged: Boolean(data.isFlagged)
+        });
+        break;
       case 'event':
         state.events.push({
           id: nextId('event'),
@@ -10315,6 +10949,8 @@ function handleClearAll() {
   state.neuro = [];
   state.liver = [];
   state.labDiagnostics = [];
+  state.surgery = [];
+  state.radiology = [];
   state.events = [];
   state.timelineDates = [];
   activeDetailPayload = null;
@@ -10324,7 +10960,7 @@ function handleClearAll() {
   renderTimeline();
   const nextType = ensureActiveParameterSelection();
   if (parameterSelect) {
-    parameterSelect.value = nextType || '';
+    syncDirectionForParameter(nextType || '');
   }
   renderDynamicFields(parameterSelect ? parameterSelect.value : nextType);
   showDetails(null);
@@ -10388,6 +11024,18 @@ function deleteEntity(context) {
       const index = state.labDiagnostics.findIndex((item) => item.id === context.id);
       if (index === -1) return false;
       state.labDiagnostics.splice(index, 1);
+      return true;
+    }
+    case 'surgery': {
+      const index = state.surgery.findIndex((item) => item.id === context.id);
+      if (index === -1) return false;
+      state.surgery.splice(index, 1);
+      return true;
+    }
+    case 'radiology': {
+      const index = state.radiology.findIndex((item) => item.id === context.id);
+      if (index === -1) return false;
+      state.radiology.splice(index, 1);
       return true;
     }
     case 'event': {
@@ -10588,6 +11236,14 @@ function closePreview() {
 if (parameterSelect) {
   parameterSelect.addEventListener('change', () => {
     renderDynamicFields(parameterSelect.value);
+  });
+}
+
+if (directionSelect) {
+  directionSelect.addEventListener('change', () => {
+    populateParameterSelect(directionSelect.value);
+    const activeParam = ensureActiveParameterSelection();
+    renderDynamicFields(activeParam);
   });
 }
 
@@ -10823,10 +11479,15 @@ window.addEventListener('blur', () => {
   setSpacePanMode(false);
 });
 
+buildParameterCatalogIndex();
+populateDirectionSelect();
+populateParameterSelect(directionSelect ? directionSelect.value : DIRECTIONS[0]?.id);
 syncIdCounterWithState(state);
 updateUndoButtonState();
 initializeTrackToggles();
 applyDisplayPreferences();
-renderDynamicFields(parameterSelect ? parameterSelect.value : '');
+const initialParam = ensureActiveParameterSelection();
+syncDirectionForParameter(initialParam);
+renderDynamicFields(parameterSelect ? parameterSelect.value : initialParam);
 renderTimeline();
 showDetails(null);
