@@ -230,9 +230,14 @@ const state = {
   surgery: [
     {
       id: nextId('surgery'),
+      parameterId: 'surgery_pleura',
       date: '2023-02-05',
       time: '16:20',
-      title: 'Санация плевральной полости',
+      procedureType: 'дренирование плевральной полости',
+      side: 'справа',
+      volumeEvacuated: '450',
+      drainageType: 'Бюлау, активная аспирация',
+      complications: [],
       comment: 'Дренирование, контроль гемостаза',
       isFlagged: false
     }
@@ -240,9 +245,16 @@ const state = {
   radiology: [
     {
       id: nextId('radiology'),
+      parameterId: 'rad_ct',
       date: '2023-02-12',
       time: '08:45',
-      title: 'КТ органов грудной клетки',
+      contrast: 'да',
+      cavitySizeMm: '32',
+      infiltration: 'умеренная',
+      dissemination: 'да',
+      pleuralEffusion: 'нет',
+      conclusion: 'Положительная рентгенологическая динамика',
+      dynamics: 'улучшение',
       comment: 'Положительная рентгенологическая динамика',
       isFlagged: false
     }
@@ -1161,7 +1173,10 @@ function getSurgeryDisplayLabel(item) {
     return '';
   }
   const override = typeof item.chartLabelOverride === 'string' ? item.chartLabelOverride.trim() : '';
-  return override || item.title || '';
+  if (override) {
+    return override;
+  }
+  return buildSurgerySummary(item).label;
 }
 
 function getRadiologyDisplayLabel(item) {
@@ -1169,7 +1184,76 @@ function getRadiologyDisplayLabel(item) {
     return '';
   }
   const override = typeof item.chartLabelOverride === 'string' ? item.chartLabelOverride.trim() : '';
-  return override || item.title || '';
+  if (override) {
+    return override;
+  }
+  return buildRadiologySummary(item).label;
+}
+
+function buildSurgerySummary(item) {
+  if (!item) {
+    return { label: '', commentLines: [] };
+  }
+  const parameterLabel = getParameterLabel(item.parameterId);
+  const pieces = [];
+  if (item.procedureType) pieces.push(item.procedureType);
+  if (item.side) pieces.push(item.side);
+  if (item.lobeSegments) pieces.push(item.lobeSegments);
+  if (item.localization) pieces.push(item.localization);
+  const labelBase = pieces.filter(Boolean).join(', ');
+  const label = labelBase || parameterLabel || 'Хирургия';
+  const commentLines = [];
+  if (parameterLabel) commentLines.push(`Параметр: ${parameterLabel}`);
+  if (item.access) commentLines.push(`Доступ: ${item.access}`);
+  if (item.indication) {
+    const extra = item.indication === 'другое' && item.indicationOther ? ` (${item.indicationOther})` : '';
+    commentLines.push(`Показание: ${item.indication}${extra}`);
+  }
+  if (item.goal) commentLines.push(`Цель: ${item.goal}`);
+  if (item.volumeEvacuated) commentLines.push(`Объём: ${item.volumeEvacuated} мл`);
+  if (item.drainageType) commentLines.push(`Дренаж: ${item.drainageType}`);
+  if (item.stagesCount) commentLines.push(`Этапы: ${item.stagesCount}`);
+  if (Array.isArray(item.complications) && item.complications.length) {
+    const comps = item.complications.filter(Boolean);
+    if (item.complicationOther) {
+      comps.push(item.complicationOther);
+    }
+    if (comps.length) {
+      commentLines.push(`Осложнения: ${comps.join(', ')}`);
+    }
+  }
+  return { label, commentLines };
+}
+
+function buildRadiologySummary(item) {
+  if (!item) {
+    return { label: '', commentLines: [] };
+  }
+  const parameterLabel = getParameterLabel(item.parameterId);
+  const labelBase = item.conclusion || parameterLabel || 'Рентгенология';
+  const label = labelBase;
+  const commentLines = [];
+  if (parameterLabel) commentLines.push(`Параметр: ${parameterLabel}`);
+  if (item.projection) commentLines.push(`Проекция: ${item.projection}`);
+  if (item.contrast) commentLines.push(`Контраст: ${item.contrast}`);
+  if (item.cavitySizeMm) commentLines.push(`Каверна: ${item.cavitySizeMm} мм`);
+  if (item.infiltration) commentLines.push(`Инфильтрация: ${item.infiltration}`);
+  if (item.dissemination) commentLines.push(`Диссеминация: ${item.dissemination}`);
+  if (item.pleuralEffusion) {
+    const volume = item.pleuralEffusionVolume ? ` (${item.pleuralEffusionVolume})` : '';
+    commentLines.push(`Выпот: ${item.pleuralEffusion}${volume}`);
+  }
+  if (item.area) commentLines.push(`Область: ${item.area}`);
+  if (item.effusion) {
+    const volume = item.effusionVolume ? ` (${item.effusionVolume})` : '';
+    commentLines.push(`Выпот: ${item.effusion}${volume}`);
+  }
+  if (item.septations) commentLines.push(`Септы: ${item.septations}`);
+  if (item.hyperfixationSummary) commentLines.push(`Гиперфиксация: ${item.hyperfixationSummary}`);
+  if (item.findingSourceBleed) commentLines.push(`Источник: ${item.findingSourceBleed}`);
+  if (item.recommendation) commentLines.push(`Рекомендации: ${item.recommendation}`);
+  if (item.dynamics) commentLines.push(`Динамика: ${item.dynamics}`);
+  return { label, commentLines };
 }
 
 function findEventIcon(key) {
@@ -1674,6 +1758,39 @@ function measureEndoscopyLayout(items = []) {
 }
 
 const LAB_TEST_TYPES = ['Микроскопия', 'МГМ', 'Посев на ППС', 'Посев на ЖПС'];
+const SURGERY_RESECTION_TYPES = [
+  'атипичная (клиновидная) резекция',
+  'сегментэктомия',
+  'лобэктомия',
+  'билобэктомия',
+  'пневмонэктомия'
+];
+const SURGERY_PLEURA_TYPES = [
+  'плевральная пункция (торакоцентез)',
+  'дренирование плевральной полости',
+  'декортикация',
+  'плеврэктомия',
+  'плевродез'
+];
+const SURGERY_COLLAPSE_TYPES = [
+  'кавернотомия',
+  'кавернопластика',
+  'торакомиопластика/торакопластика',
+  'искусственный пневмоторакс',
+  'пневмоперитонеум'
+];
+const SURGERY_SIDES = ['справа', 'слева'];
+const SURGERY_ACCESS_TYPES = ['открытый', 'VATS'];
+const SURGERY_COMPLICATIONS = [
+  'кровотечение',
+  'бронхоплевральный свищ',
+  'эмпиема',
+  'ателектаз',
+  'пневмоторакс',
+  'инфекция',
+  'другое'
+];
+const RAD_DYNAMICS = ['улучшение', 'без динамики', 'ухудшение'];
 
 const CSV_DELIMITER = ';';
 const LIST_DELIMITER = '|';
@@ -1715,6 +1832,7 @@ function normalizeDateString(raw) {
 }
 const DATA_EXPORT_FIELDS = [
   { key: 'type', label: 'Тип' },
+  { key: 'parameterId', label: 'Параметр' },
   { key: 'id', label: 'Идентификатор' },
   { key: 'parentId', label: 'Идентификатор курса' },
   { key: 'date', label: 'Дата' },
@@ -1730,6 +1848,34 @@ const DATA_EXPORT_FIELDS = [
   { key: 'manipulationType', label: 'Тип процедуры' },
   { key: 'interventions', label: 'Выполненные действия' },
   { key: 'complications', label: 'Осложнения' },
+  { key: 'procedureType', label: 'Тип операции/процедуры' },
+  { key: 'side', label: 'Сторона' },
+  { key: 'lobeSegments', label: 'Доля/сегменты' },
+  { key: 'access', label: 'Доступ' },
+  { key: 'indication', label: 'Показание' },
+  { key: 'indicationOther', label: 'Показание (другое)' },
+  { key: 'complicationOther', label: 'Осложнение (другое)' },
+  { key: 'volumeEvacuated', label: 'Объём эвакуированного, мл' },
+  { key: 'drainageType', label: 'Тип дренажа/метод' },
+  { key: 'localization', label: 'Локализация' },
+  { key: 'goal', label: 'Цель вмешательства' },
+  { key: 'stagesCount', label: 'Количество этапов' },
+  { key: 'projection', label: 'Проекция' },
+  { key: 'conclusion', label: 'Заключение' },
+  { key: 'dynamics', label: 'Динамика' },
+  { key: 'contrast', label: 'Контраст' },
+  { key: 'cavitySizeMm', label: 'Размер каверны, мм' },
+  { key: 'infiltration', label: 'Инфильтрация' },
+  { key: 'dissemination', label: 'Диссеминация' },
+  { key: 'pleuralEffusion', label: 'Плевральный выпот' },
+  { key: 'pleuralEffusionVolume', label: 'Объём выпота' },
+  { key: 'findingSourceBleed', label: 'Источник кровотечения' },
+  { key: 'recommendation', label: 'Рекомендации' },
+  { key: 'area', label: 'Область исследования' },
+  { key: 'effusion', label: 'Выпот' },
+  { key: 'effusionVolume', label: 'Объём выпота (если есть)' },
+  { key: 'septations', label: 'Септы' },
+  { key: 'hyperfixationSummary', label: 'Сводка гиперфиксации' },
   { key: 'medicationName', label: 'Препарат' },
   { key: 'dosage', label: 'Дозировка' },
   { key: 'note', label: 'Примечание' },
@@ -1755,9 +1901,38 @@ const DATA_EXPORT_KEY_BY_LABEL = new Map(DATA_EXPORT_FIELDS.map((field) => [fiel
 const DATA_EXPORT_LABEL_BY_KEY = new Map(DATA_EXPORT_FIELDS.map((field) => [field.key, field.label]));
 const OPTIONAL_IMPORT_HEADERS = new Set(
   [
+    'parameterId',
     'manipulationType',
     'interventions',
     'complications',
+    'procedureType',
+    'side',
+    'lobeSegments',
+    'access',
+    'indication',
+    'indicationOther',
+    'complicationOther',
+    'volumeEvacuated',
+    'drainageType',
+    'localization',
+    'goal',
+    'stagesCount',
+    'projection',
+    'conclusion',
+    'dynamics',
+    'contrast',
+    'cavitySizeMm',
+    'infiltration',
+    'dissemination',
+    'pleuralEffusion',
+    'pleuralEffusionVolume',
+    'findingSourceBleed',
+    'recommendation',
+    'area',
+    'effusion',
+    'effusionVolume',
+    'septations',
+    'hyperfixationSummary',
     'chartLabelOverride',
     'chartSummaryOverride',
     'chartHeightOverride',
@@ -1851,10 +2026,17 @@ const PARAMETER_CATALOG = {
     { id: 'endoscopy', label: 'Эндоскопическая процедура', trackKey: 'endoscopy', formKind: 'endoscopy' }
   ],
   surgery: [
-    { id: 'surgery', label: 'Хирургия', trackKey: 'surgery', formKind: 'surgery' }
+    { id: 'surgery_resection', label: 'Резекционная хирургия лёгких', trackKey: 'surgery', formKind: 'surgery_resection' },
+    { id: 'surgery_pleura', label: 'Плевра и дренирование', trackKey: 'surgery', formKind: 'surgery_pleura' },
+    { id: 'surgery_collapse', label: 'Кавернозная/коллапсохирургия', trackKey: 'surgery', formKind: 'surgery_collapse' }
   ],
   radiology: [
-    { id: 'radiology', label: 'Рентгенология', trackKey: 'radiology', formKind: 'radiology' }
+    { id: 'rad_cxr', label: 'Рентгенография ОГК', trackKey: 'radiology', formKind: 'rad_cxr' },
+    { id: 'rad_ct', label: 'КТ/HRCT ОГК', trackKey: 'radiology', formKind: 'rad_ct' },
+    { id: 'rad_cta', label: 'КТ-ангиография', trackKey: 'radiology', formKind: 'rad_cta' },
+    { id: 'rad_us', label: 'УЗИ', trackKey: 'radiology', formKind: 'rad_us' },
+    { id: 'rad_mri', label: 'МРТ', trackKey: 'radiology', formKind: 'rad_mri' },
+    { id: 'rad_petct', label: 'ПЭТ/КТ', trackKey: 'radiology', formKind: 'rad_petct' }
   ],
   diagnostics: [
     { id: 'lab', label: 'Лабораторная диагностика', trackKey: 'lab', formKind: 'lab' }
@@ -1866,6 +2048,8 @@ const PARAMETER_CATALOG = {
 
 const PARAMETER_BY_ID = new Map();
 const PARAMETER_DIRECTION_BY_ID = new Map();
+const PARAMETER_LABEL_BY_ID = new Map();
+const PARAMETER_ID_BY_LABEL = new Map();
 
 const formConfig = {
   temperature: [
@@ -1963,15 +2147,64 @@ const formConfig = {
       required: false
     }
   ],
-  surgery: [
+  surgery_resection: [
     { type: 'date', name: 'date', label: 'Дата', required: true },
     { type: 'time', name: 'time', label: 'Время', required: false },
     {
-      type: 'text',
-      name: 'title',
-      label: 'Название вмешательства',
+      type: 'select',
+      name: 'procedureType',
+      label: 'Тип операции',
       required: true,
-      placeholder: 'Например: санация плевральной полости'
+      options: SURGERY_RESECTION_TYPES
+    },
+    {
+      type: 'select',
+      name: 'side',
+      label: 'Сторона',
+      required: true,
+      options: SURGERY_SIDES
+    },
+    {
+      type: 'text',
+      name: 'lobeSegments',
+      label: 'Доля/сегменты',
+      required: false,
+      placeholder: 'Например: S1-S2, верхняя доля'
+    },
+    {
+      type: 'select',
+      name: 'access',
+      label: 'Доступ',
+      required: false,
+      options: SURGERY_ACCESS_TYPES
+    },
+    {
+      type: 'select',
+      name: 'indication',
+      label: 'Показание',
+      required: false,
+      options: ['по жизненным показаниям', 'по плану', 'другое']
+    },
+    {
+      type: 'text',
+      name: 'indicationOther',
+      label: 'Показание (другое)',
+      required: false
+    },
+    {
+      type: 'select',
+      name: 'complications',
+      label: 'Осложнения',
+      required: false,
+      options: SURGERY_COMPLICATIONS,
+      multiple: true,
+      size: 6
+    },
+    {
+      type: 'text',
+      name: 'complicationOther',
+      label: 'Осложнение (другое)',
+      required: false
     },
     { type: 'textarea', name: 'comment', label: 'Комментарий', required: false },
     {
@@ -1981,15 +2214,325 @@ const formConfig = {
       required: false
     }
   ],
-  radiology: [
+  surgery_pleura: [
+    { type: 'date', name: 'date', label: 'Дата', required: true },
+    { type: 'time', name: 'time', label: 'Время', required: false },
+    {
+      type: 'select',
+      name: 'procedureType',
+      label: 'Манипуляция',
+      required: true,
+      options: SURGERY_PLEURA_TYPES
+    },
+    {
+      type: 'select',
+      name: 'side',
+      label: 'Сторона',
+      required: false,
+      options: SURGERY_SIDES
+    },
+    {
+      type: 'text',
+      name: 'volumeEvacuated',
+      label: 'Объём эвакуированного, мл',
+      required: false,
+      placeholder: 'Например: 450'
+    },
+    {
+      type: 'text',
+      name: 'drainageType',
+      label: 'Тип дренажа/метод',
+      required: false
+    },
+    {
+      type: 'select',
+      name: 'complications',
+      label: 'Осложнения',
+      required: false,
+      options: SURGERY_COMPLICATIONS,
+      multiple: true,
+      size: 6
+    },
+    {
+      type: 'text',
+      name: 'complicationOther',
+      label: 'Осложнение (другое)',
+      required: false
+    },
+    { type: 'textarea', name: 'comment', label: 'Комментарий', required: false },
+    {
+      type: 'checkbox',
+      name: 'isFlagged',
+      label: 'Выделить красным (проблемный участок)',
+      required: false
+    }
+  ],
+  surgery_collapse: [
+    { type: 'date', name: 'date', label: 'Дата', required: true },
+    { type: 'time', name: 'time', label: 'Время', required: false },
+    {
+      type: 'select',
+      name: 'procedureType',
+      label: 'Манипуляция',
+      required: true,
+      options: SURGERY_COLLAPSE_TYPES
+    },
+    {
+      type: 'text',
+      name: 'localization',
+      label: 'Сторона/локализация',
+      required: false
+    },
+    {
+      type: 'text',
+      name: 'goal',
+      label: 'Цель вмешательства',
+      required: false
+    },
+    {
+      type: 'number',
+      name: 'stagesCount',
+      label: 'Количество этапов',
+      required: false,
+      min: '1'
+    },
+    {
+      type: 'select',
+      name: 'complications',
+      label: 'Осложнения',
+      required: false,
+      options: SURGERY_COMPLICATIONS,
+      multiple: true,
+      size: 6
+    },
+    {
+      type: 'text',
+      name: 'complicationOther',
+      label: 'Осложнение (другое)',
+      required: false
+    },
+    { type: 'textarea', name: 'comment', label: 'Комментарий', required: false },
+    {
+      type: 'checkbox',
+      name: 'isFlagged',
+      label: 'Выделить красным (проблемный участок)',
+      required: false
+    }
+  ],
+  rad_cxr: [
+    { type: 'date', name: 'date', label: 'Дата', required: true },
+    { type: 'time', name: 'time', label: 'Время', required: false },
+    {
+      type: 'select',
+      name: 'projection',
+      label: 'Проекция',
+      required: true,
+      options: ['прямая', 'боковая']
+    },
+    {
+      type: 'text',
+      name: 'conclusion',
+      label: 'Заключение',
+      required: true
+    },
+    {
+      type: 'select',
+      name: 'dynamics',
+      label: 'Динамика',
+      required: true,
+      options: RAD_DYNAMICS
+    },
+    { type: 'textarea', name: 'comment', label: 'Комментарий', required: false },
+    {
+      type: 'checkbox',
+      name: 'isFlagged',
+      label: 'Выделить красным (проблемный участок)',
+      required: false
+    }
+  ],
+  rad_ct: [
+    { type: 'date', name: 'date', label: 'Дата', required: true },
+    { type: 'time', name: 'time', label: 'Время', required: false },
+    {
+      type: 'select',
+      name: 'contrast',
+      label: 'Контраст',
+      required: true,
+      options: ['нет', 'да']
+    },
+    {
+      type: 'number',
+      name: 'cavitySizeMm',
+      label: 'Размер каверны, мм',
+      required: false,
+      min: '0'
+    },
+    {
+      type: 'select',
+      name: 'infiltration',
+      label: 'Инфильтрация',
+      required: false,
+      options: ['нет', 'умеренная', 'выраженная']
+    },
+    {
+      type: 'select',
+      name: 'dissemination',
+      label: 'Диссеминация',
+      required: false,
+      options: ['нет', 'да']
+    },
+    {
+      type: 'select',
+      name: 'pleuralEffusion',
+      label: 'Плевральный выпот',
+      required: false,
+      options: ['нет', 'да']
+    },
+    {
+      type: 'text',
+      name: 'pleuralEffusionVolume',
+      label: 'Объём выпота (если есть)',
+      required: false
+    },
+    { type: 'text', name: 'conclusion', label: 'Заключение', required: true },
+    {
+      type: 'select',
+      name: 'dynamics',
+      label: 'Динамика',
+      required: true,
+      options: RAD_DYNAMICS
+    },
+    { type: 'textarea', name: 'comment', label: 'Комментарий', required: false },
+    {
+      type: 'checkbox',
+      name: 'isFlagged',
+      label: 'Выделить красным (проблемный участок)',
+      required: false
+    }
+  ],
+  rad_cta: [
     { type: 'date', name: 'date', label: 'Дата', required: true },
     { type: 'time', name: 'time', label: 'Время', required: false },
     {
       type: 'text',
-      name: 'title',
-      label: 'Название исследования',
+      name: 'findingSourceBleed',
+      label: 'Источник кровотечения',
+      required: false
+    },
+    {
+      type: 'textarea',
+      name: 'recommendation',
+      label: 'Рекомендации',
+      required: false
+    },
+    { type: 'textarea', name: 'comment', label: 'Комментарий', required: false },
+    {
+      type: 'checkbox',
+      name: 'isFlagged',
+      label: 'Выделить красным (проблемный участок)',
+      required: false
+    }
+  ],
+  rad_us: [
+    { type: 'date', name: 'date', label: 'Дата', required: true },
+    { type: 'time', name: 'time', label: 'Время', required: false },
+    {
+      type: 'select',
+      name: 'area',
+      label: 'Область исследования',
       required: true,
-      placeholder: 'Например: КТ органов грудной клетки'
+      options: ['плевра', 'брюшная', 'лимфоузлы', 'другое']
+    },
+    {
+      type: 'select',
+      name: 'effusion',
+      label: 'Выпот',
+      required: false,
+      options: ['нет', 'да']
+    },
+    {
+      type: 'text',
+      name: 'effusionVolume',
+      label: 'Объём выпота (если есть)',
+      required: false
+    },
+    {
+      type: 'select',
+      name: 'septations',
+      label: 'Септы',
+      required: false,
+      options: ['нет', 'да']
+    },
+    { type: 'text', name: 'conclusion', label: 'Заключение', required: true },
+    {
+      type: 'select',
+      name: 'dynamics',
+      label: 'Динамика',
+      required: false,
+      options: RAD_DYNAMICS
+    },
+    { type: 'textarea', name: 'comment', label: 'Комментарий', required: false },
+    {
+      type: 'checkbox',
+      name: 'isFlagged',
+      label: 'Выделить красным (проблемный участок)',
+      required: false
+    }
+  ],
+  rad_mri: [
+    { type: 'date', name: 'date', label: 'Дата', required: true },
+    { type: 'time', name: 'time', label: 'Время', required: false },
+    {
+      type: 'select',
+      name: 'area',
+      label: 'Область исследования',
+      required: true,
+      options: ['головной мозг', 'позвоночник', 'суставы', 'другое']
+    },
+    {
+      type: 'select',
+      name: 'contrast',
+      label: 'Контраст',
+      required: true,
+      options: ['нет', 'да']
+    },
+    { type: 'text', name: 'conclusion', label: 'Заключение', required: true },
+    {
+      type: 'select',
+      name: 'dynamics',
+      label: 'Динамика',
+      required: true,
+      options: RAD_DYNAMICS
+    },
+    { type: 'textarea', name: 'comment', label: 'Комментарий', required: false },
+    {
+      type: 'checkbox',
+      name: 'isFlagged',
+      label: 'Выделить красным (проблемный участок)',
+      required: false
+    }
+  ],
+  rad_petct: [
+    { type: 'date', name: 'date', label: 'Дата', required: true },
+    { type: 'time', name: 'time', label: 'Время', required: false },
+    {
+      type: 'text',
+      name: 'area',
+      label: 'Область исследования',
+      required: true
+    },
+    {
+      type: 'textarea',
+      name: 'hyperfixationSummary',
+      label: 'Сводка гиперфиксации',
+      required: false
+    },
+    {
+      type: 'select',
+      name: 'dynamics',
+      label: 'Динамика',
+      required: true,
+      options: RAD_DYNAMICS
     },
     { type: 'textarea', name: 'comment', label: 'Комментарий', required: false },
     {
@@ -2552,6 +3095,8 @@ const trackVisibility = new Map(TRACK_KEYS.map((key) => [key, true]));
 function buildParameterCatalogIndex() {
   PARAMETER_BY_ID.clear();
   PARAMETER_DIRECTION_BY_ID.clear();
+  PARAMETER_LABEL_BY_ID.clear();
+  PARAMETER_ID_BY_LABEL.clear();
   Object.entries(PARAMETER_CATALOG).forEach(([directionKey, params]) => {
     (params || []).forEach((param) => {
       if (!param || !param.id) {
@@ -2559,6 +3104,10 @@ function buildParameterCatalogIndex() {
       }
       PARAMETER_BY_ID.set(param.id, param);
       PARAMETER_DIRECTION_BY_ID.set(param.id, directionKey);
+      if (param.label) {
+        PARAMETER_LABEL_BY_ID.set(param.id, param.label);
+        PARAMETER_ID_BY_LABEL.set(param.label.toLowerCase(), param.id);
+      }
     });
   });
 }
@@ -2571,6 +3120,30 @@ function getParameterConfig(parameterId) {
 function getDirectionForParameter(parameterId) {
   if (!parameterId) return '';
   return PARAMETER_DIRECTION_BY_ID.get(parameterId) || '';
+}
+
+function getParameterLabel(parameterId) {
+  if (!parameterId) return '';
+  return PARAMETER_LABEL_BY_ID.get(parameterId) || '';
+}
+
+function formatParameterForExport(parameterId) {
+  if (!parameterId) return '';
+  return getParameterLabel(parameterId) || parameterId;
+}
+
+function parseParameterForImport(rawValue) {
+  if (!rawValue) return '';
+  const normalized = String(rawValue).trim();
+  if (!normalized) return '';
+  if (PARAMETER_BY_ID.has(normalized)) {
+    return normalized;
+  }
+  const lowered = normalized.toLowerCase();
+  if (PARAMETER_ID_BY_LABEL.has(lowered)) {
+    return PARAMETER_ID_BY_LABEL.get(lowered) || '';
+  }
+  return '';
 }
 
 function getParametersForDirection(directionKey) {
@@ -4296,10 +4869,11 @@ function enterEditMode(editInfo) {
   }
 
   editContext = { ...editInfo };
+  const parameterId = editInfo.parameterId || type;
   if (parameterSelect) {
-    syncDirectionForParameter(type);
+    syncDirectionForParameter(parameterId);
   }
-  renderDynamicFields(type);
+  renderDynamicFields(parameterId);
   updateFormModeIndicators(type);
 }
 
@@ -4602,6 +5176,9 @@ function renderDynamicFields(type) {
   }
 
   let editingSnapshot = getEditingSnapshot(trackKey);
+  if (editContext && editContext.type === trackKey && editContext.parameterId && editContext.parameterId !== currentType) {
+    editingSnapshot = null;
+  }
   if (editContext && editContext.type === trackKey && !editingSnapshot) {
     editContext = null;
     updateFormModeIndicators(trackKey);
@@ -8520,6 +9097,7 @@ function renderSurgery(track, dates) {
   sorted.forEach((item) => {
     const x = getXPosition(item.date, dates);
     const fontScale = getEffectiveChartFontScale(item);
+    const summary = buildSurgerySummary(item);
     const marker = createSvgElement('circle', {
       cx: x,
       cy: centerY,
@@ -8541,25 +9119,17 @@ function renderSurgery(track, dates) {
       type: 'Хирургия',
       date: item.date,
       time: item.time,
-      title: item.title,
-      comment: item.comment || '',
+      title: summary.label || getSurgeryDisplayLabel(item),
+      comment: [...summary.commentLines, item.comment || ''].filter(Boolean).join(' • '),
       color: COLORS.surgery,
       isFlagged: Boolean(item.isFlagged),
       deleteInfo: { type: 'surgery', id: item.id },
       fontTarget: { type: 'surgery', id: item.id }
     };
 
-    const editInfo = { type: 'surgery', id: item.id };
+    const editInfo = { type: 'surgery', id: item.id, parameterId: item.parameterId || 'surgery_pleura' };
     attachDetails(marker, detail, marker, item.id, editInfo);
-    attachDetails(label, detail, marker, item.id, editInfo, {
-      inlineEditor: {
-        fieldNames: ['title', 'comment'],
-        preferredWidth: 260,
-        focusField: 'title',
-        compact: true
-      },
-      highlightInlineEditor: null
-    });
+    attachDetails(label, detail, marker, item.id, editInfo, { inlineEditor: false });
 
     if (item.isFlagged) {
       marker.classList.add('is-flagged-shape');
@@ -8590,6 +9160,7 @@ function renderRadiology(track, dates) {
   sorted.forEach((item) => {
     const x = getXPosition(item.date, dates);
     const fontScale = getEffectiveChartFontScale(item);
+    const summary = buildRadiologySummary(item);
     const marker = createSvgElement('rect', {
       x: x - markerSize / 2,
       y: centerY - markerSize / 2,
@@ -8614,25 +9185,17 @@ function renderRadiology(track, dates) {
       type: 'Рентгенология',
       date: item.date,
       time: item.time,
-      title: item.title,
-      comment: item.comment || '',
+      title: summary.label || getRadiologyDisplayLabel(item),
+      comment: [...summary.commentLines, item.comment || ''].filter(Boolean).join(' • '),
       color: COLORS.radiology,
       isFlagged: Boolean(item.isFlagged),
       deleteInfo: { type: 'radiology', id: item.id },
       fontTarget: { type: 'radiology', id: item.id }
     };
 
-    const editInfo = { type: 'radiology', id: item.id };
+    const editInfo = { type: 'radiology', id: item.id, parameterId: item.parameterId || 'rad_cxr' };
     attachDetails(marker, detail, marker, item.id, editInfo);
-    attachDetails(label, detail, marker, item.id, editInfo, {
-      inlineEditor: {
-        fieldNames: ['title', 'comment'],
-        preferredWidth: 260,
-        focusField: 'title',
-        compact: true
-      },
-      highlightInlineEditor: null
-    });
+    attachDetails(label, detail, marker, item.id, editInfo, { inlineEditor: false });
 
     if (item.isFlagged) {
       marker.classList.add('is-flagged-shape');
@@ -9751,6 +10314,7 @@ function buildExportRows() {
   state.surgery.forEach((item) => {
     rows.push({
       type: 'surgery',
+      parameterId: item.parameterId || '',
       id: item.id || '',
       parentId: '',
       date: item.date || '',
@@ -9758,14 +10322,42 @@ function buildExportRows() {
       startDate: '',
       endDate: '',
       value: '',
-      title: item.title || '',
+      title: '',
       status: '',
       comment: item.comment || '',
       testType: '',
       result: '',
       manipulationType: '',
       interventions: '',
-      complications: '',
+      complications: Array.isArray(item.complications) ? item.complications.join(LIST_DELIMITER) : '',
+      procedureType: item.procedureType || '',
+      side: item.side || '',
+      lobeSegments: item.lobeSegments || '',
+      access: item.access || '',
+      indication: item.indication || '',
+      indicationOther: item.indicationOther || '',
+      complicationOther: item.complicationOther || '',
+      volumeEvacuated: item.volumeEvacuated || '',
+      drainageType: item.drainageType || '',
+      localization: item.localization || '',
+      goal: item.goal || '',
+      stagesCount: item.stagesCount || '',
+      projection: '',
+      conclusion: '',
+      dynamics: '',
+      contrast: '',
+      cavitySizeMm: '',
+      infiltration: '',
+      dissemination: '',
+      pleuralEffusion: '',
+      pleuralEffusionVolume: '',
+      findingSourceBleed: '',
+      recommendation: '',
+      area: '',
+      effusion: '',
+      effusionVolume: '',
+      septations: '',
+      hyperfixationSummary: '',
       medicationName: '',
       dosage: '',
       note: '',
@@ -9791,6 +10383,7 @@ function buildExportRows() {
   state.radiology.forEach((item) => {
     rows.push({
       type: 'radiology',
+      parameterId: item.parameterId || '',
       id: item.id || '',
       parentId: '',
       date: item.date || '',
@@ -9798,7 +10391,7 @@ function buildExportRows() {
       startDate: '',
       endDate: '',
       value: '',
-      title: item.title || '',
+      title: '',
       status: '',
       comment: item.comment || '',
       testType: '',
@@ -9806,6 +10399,34 @@ function buildExportRows() {
       manipulationType: '',
       interventions: '',
       complications: '',
+      procedureType: '',
+      side: '',
+      lobeSegments: '',
+      access: '',
+      indication: '',
+      indicationOther: '',
+      complicationOther: '',
+      volumeEvacuated: '',
+      drainageType: '',
+      localization: '',
+      goal: '',
+      stagesCount: '',
+      projection: item.projection || '',
+      conclusion: item.conclusion || '',
+      dynamics: item.dynamics || '',
+      contrast: item.contrast || '',
+      cavitySizeMm: item.cavitySizeMm || '',
+      infiltration: item.infiltration || '',
+      dissemination: item.dissemination || '',
+      pleuralEffusion: item.pleuralEffusion || '',
+      pleuralEffusionVolume: item.pleuralEffusionVolume || '',
+      findingSourceBleed: item.findingSourceBleed || '',
+      recommendation: item.recommendation || '',
+      area: item.area || '',
+      effusion: item.effusion || '',
+      effusionVolume: item.effusionVolume || '',
+      septations: item.septations || '',
+      hyperfixationSummary: item.hyperfixationSummary || '',
       medicationName: '',
       dosage: '',
       note: '',
@@ -10003,6 +10624,8 @@ function buildCsvContent(rows) {
       switch (key) {
         case 'type':
           return formatTypeForExport(row.type);
+        case 'parameterId':
+          return formatParameterForExport(row.parameterId);
         case 'flagged':
         case 'enabled':
           return booleanToCsv(row[key] !== undefined ? row[key] : true);
@@ -10284,23 +10907,33 @@ function importDataFromCsv(text) {
         break;
       }
       case 'surgery': {
-        if (!entry.date || !entry.title) {
-          skippedRows.push({ row: index + 2, reason: 'Хирургия без даты или названия' });
+        if (!entry.date) {
+          skippedRows.push({ row: index + 2, reason: 'Хирургия без даты' });
           break;
         }
+        const parameterId = parseParameterForImport(entry.parameterId) || 'surgery_pleura';
         const chartFontScale = parseCsvFontScale(entry.chartFontScale);
-        const chartLabelOverride = (entry.chartLabelOverride || '').trim();
         const surgeryEntry = {
           id: nextId('surgery'),
+          parameterId,
           date: entry.date,
           time: entry.time || '',
-          title: entry.title,
+          procedureType: entry.procedureType || '',
+          side: entry.side || '',
+          lobeSegments: entry.lobeSegments || '',
+          access: entry.access || '',
+          indication: entry.indication || '',
+          indicationOther: entry.indicationOther || '',
+          complications: parseDelimitedList(entry.complications),
+          complicationOther: entry.complicationOther || '',
+          volumeEvacuated: entry.volumeEvacuated || '',
+          drainageType: entry.drainageType || '',
+          localization: entry.localization || '',
+          goal: entry.goal || '',
+          stagesCount: entry.stagesCount || '',
           comment: entry.comment || '',
           isFlagged: parseCsvBoolean(entry.flagged)
         };
-        if (chartLabelOverride) {
-          surgeryEntry.chartLabelOverride = chartLabelOverride;
-        }
         if (chartFontScale !== null) {
           surgeryEntry.chartFontScale = chartFontScale;
         }
@@ -10308,23 +10941,36 @@ function importDataFromCsv(text) {
         break;
       }
       case 'radiology': {
-        if (!entry.date || !entry.title) {
-          skippedRows.push({ row: index + 2, reason: 'Рентгенология без даты или названия' });
+        if (!entry.date) {
+          skippedRows.push({ row: index + 2, reason: 'Рентгенология без даты' });
           break;
         }
+        const parameterId = parseParameterForImport(entry.parameterId) || 'rad_cxr';
         const chartFontScale = parseCsvFontScale(entry.chartFontScale);
-        const chartLabelOverride = (entry.chartLabelOverride || '').trim();
         const radiologyEntry = {
           id: nextId('radiology'),
+          parameterId,
           date: entry.date,
           time: entry.time || '',
-          title: entry.title,
+          projection: entry.projection || '',
+          conclusion: entry.conclusion || '',
+          dynamics: entry.dynamics || '',
+          contrast: entry.contrast || '',
+          cavitySizeMm: entry.cavitySizeMm || '',
+          infiltration: entry.infiltration || '',
+          dissemination: entry.dissemination || '',
+          pleuralEffusion: entry.pleuralEffusion || '',
+          pleuralEffusionVolume: entry.pleuralEffusionVolume || '',
+          findingSourceBleed: entry.findingSourceBleed || '',
+          recommendation: entry.recommendation || '',
+          area: entry.area || '',
+          effusion: entry.effusion || '',
+          effusionVolume: entry.effusionVolume || '',
+          septations: entry.septations || '',
+          hyperfixationSummary: entry.hyperfixationSummary || '',
           comment: entry.comment || '',
           isFlagged: parseCsvBoolean(entry.flagged)
         };
-        if (chartLabelOverride) {
-          radiologyEntry.chartLabelOverride = chartLabelOverride;
-        }
         if (chartFontScale !== null) {
           radiologyEntry.chartFontScale = chartFontScale;
         }
@@ -10672,8 +11318,11 @@ function handleImportFileChange(event) {
 
 function handleFormSubmit(event) {
   event.preventDefault();
-  const type = parameterSelect.value;
-  const data = collectFormData(type);
+  const parameterId = parameterSelect.value;
+  const parameterConfig = getParameterConfig(parameterId);
+  const type = parameterConfig ? parameterConfig.trackKey : parameterId;
+  const formKind = parameterConfig ? parameterConfig.formKind : parameterId;
+  const data = collectFormData(parameterId);
   if (!data) return;
 
   if (type === 'liver' && data.endDate && parseDate(data.endDate) < parseDate(data.startDate)) {
@@ -10781,22 +11430,16 @@ function handleFormSubmit(event) {
       case 'surgery': {
         const target = state.surgery.find((item) => item.id === editContext.id);
         if (target) {
-          target.date = data.date;
-          target.time = data.time;
-          target.title = data.title;
-          target.comment = data.comment;
-          target.isFlagged = Boolean(data.isFlagged);
+          target.parameterId = parameterId;
+          Object.assign(target, data);
         }
         break;
       }
       case 'radiology': {
         const target = state.radiology.find((item) => item.id === editContext.id);
         if (target) {
-          target.date = data.date;
-          target.time = data.time;
-          target.title = data.title;
-          target.comment = data.comment;
-          target.isFlagged = Boolean(data.isFlagged);
+          target.parameterId = parameterId;
+          Object.assign(target, data);
         }
         break;
       }
@@ -10881,21 +11524,15 @@ function handleFormSubmit(event) {
       case 'surgery':
         state.surgery.push({
           id: nextId('surgery'),
-          date: data.date,
-          time: data.time,
-          title: data.title,
-          comment: data.comment,
-          isFlagged: Boolean(data.isFlagged)
+          parameterId,
+          ...data
         });
         break;
       case 'radiology':
         state.radiology.push({
           id: nextId('radiology'),
-          date: data.date,
-          time: data.time,
-          title: data.title,
-          comment: data.comment,
-          isFlagged: Boolean(data.isFlagged)
+          parameterId,
+          ...data
         });
         break;
       case 'event':
@@ -10936,7 +11573,7 @@ function handleFormSubmit(event) {
 
   clearSelection();
   renderTimeline();
-  renderDynamicFields(type);
+  renderDynamicFields(formKind);
 }
 
 function handleClearAll() {
