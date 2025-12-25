@@ -383,7 +383,6 @@ const SVG_STYLE_TEXT = `
   .event-card{fill:rgba(17,24,39,0.06);stroke:${COLORS.event};stroke-width:1.4;}
   .lab-card{fill:rgba(14,165,233,0.12);stroke:${COLORS.lab};stroke-width:1.4;}
   .neuro-card{fill:rgba(139,92,246,0.12);stroke:${COLORS.neuro};stroke-width:1.4;}
-  .temperature-comment-card{fill:rgba(37,99,235,0.1);stroke:${COLORS.accent};stroke-width:1.2;}
   .surgery-marker{fill:${COLORS.surgery};stroke:#ffffff;stroke-width:2;}
   .surgery-label{font-size:calc(12px * var(--font-scale));font-family:'Inter','Segoe UI',sans-serif;fill:#000000;}
   .radiology-marker{fill:${COLORS.radiology};stroke:#ffffff;stroke-width:2;}
@@ -3639,6 +3638,7 @@ const tooltipDataMap = new WeakMap();
 let tooltipElement = null;
 let tooltipActiveData = null;
 let tooltipHideTimeout = null;
+const TOOLTIP_ENABLED = false;
 let activeFontTarget = null;
 let tooltipViewSection = null;
 let tooltipEditorForm = null;
@@ -4840,7 +4840,7 @@ function handleTooltipEditorSubmit(event) {
 }
 
 function registerTooltipTarget(target, detail, highlightTarget, editInfo) {
-  if (!target || !detail) {
+  if (!TOOLTIP_ENABLED || !target || !detail) {
     return;
   }
   tooltipDataMap.set(target, { detail, highlightTarget, editInfo });
@@ -8709,109 +8709,8 @@ function renderTemperature(track, dates, chartWidth) {
     valueLabel.style.fontSize = `${12 * fontScale}px`;
     timelineSvg.appendChild(valueLabel);
 
-    let commentCard = null;
-    let commentText = null;
-    let commentHandle = null;
-    if (item.comment) {
-      const widthOverride = parseWidthOverride(item.chartWidthOverride);
-      const heightOverride = parseHeightOverride(item.chartHeightOverride);
-      const maxWidth = Math.max(
-        SINGLE_DATE_CARD_MIN_WIDTH,
-        Math.min(SINGLE_DATE_CARD_MAX_WIDTH, chartWidth - LEFT_MARGIN - RIGHT_MARGIN)
-      );
-      const layout = buildSingleDateCardLayout(item.comment, fontScale, {
-        widthOverride,
-        heightOverride,
-        maxWidth
-      });
-      const maxHeight = Math.max(layout.naturalHeight, track.height - 12);
-      const cardHeight = clampCardHeight(layout.height, layout.naturalHeight, maxHeight);
-      const desiredY = y - 24 * fontScale - cardHeight;
-      const cardY = clampCardY(desiredY, track, cardHeight);
-      const centered = computeCenteredCardX(x, layout.width, chartWidth);
-
-      commentCard = createSvgElement('rect', {
-        x: centered.x,
-        y: cardY,
-        width: layout.width,
-        height: cardHeight,
-        rx: 10,
-        ry: 10,
-        class: 'temperature-comment-card'
-      });
-      timelineSvg.appendChild(commentCard);
-
-      commentText = createSvgElement('text', {
-        x: centered.center,
-        y: cardY + layout.paddingY,
-        class: 'temperature-comment',
-        'text-anchor': 'middle',
-        'dominant-baseline': 'hanging'
-      });
-      commentText.style.fontSize = `${12 * fontScale}px`;
-      applyProvidedLines(commentText, layout.lines, layout.lineHeight);
-      timelineSvg.appendChild(commentText);
-
-      const handleSize = RESIZE_HANDLE_SIZE;
-      commentHandle = createSvgElement('rect', {
-        x: centered.x + layout.width - handleSize,
-        y: cardY + cardHeight - handleSize,
-        width: handleSize,
-        height: handleSize,
-        rx: 3,
-        ry: 3,
-        class: 'resize-handle temperature-resize-handle'
-      });
-      timelineSvg.appendChild(commentHandle);
-
-      const updatePreview = (nextWidth, nextHeight) => {
-        const previewWidth = clampCardWidth(nextWidth, layout.baseWidth, maxWidth);
-        const previewMaxChars = estimateMaxCharsForWidth(previewWidth - layout.paddingX * 2, fontScale);
-        const previewLines = wrapTextToLines(item.comment, previewMaxChars, Infinity);
-        const previewNaturalHeight = Math.max(
-          SINGLE_DATE_CARD_MIN_HEIGHT,
-          previewLines.length * layout.lineHeight + layout.paddingY * 2
-        );
-        const previewHeight = Math.max(nextHeight, previewNaturalHeight);
-        const previewCenter = computeCenteredCardX(x, previewWidth, chartWidth);
-
-        commentCard.setAttribute('x', previewCenter.x);
-        commentCard.setAttribute('width', previewWidth);
-        commentCard.setAttribute('height', previewHeight);
-        commentText.setAttribute('x', previewCenter.center);
-        commentText.setAttribute('y', cardY + layout.paddingY);
-        applyProvidedLines(commentText, previewLines, layout.lineHeight);
-        commentHandle.setAttribute('x', previewCenter.x + previewWidth - handleSize);
-        commentHandle.setAttribute('y', cardY + previewHeight - handleSize);
-      };
-
-      registerResizable(commentHandle, {
-        axis: 'xy',
-        centered: true,
-        getWidth: () => {
-          const current = Number(commentCard.getAttribute('width'));
-          return Number.isFinite(current) && current > 0 ? current : layout.width;
-        },
-        getHeight: () => {
-          const current = Number(commentCard.getAttribute('height'));
-          return Number.isFinite(current) && current > 0 ? current : cardHeight;
-        },
-        getMinWidth: () => layout.baseWidth,
-        getMaxWidth: () => maxWidth,
-        getMinHeight: () => layout.naturalHeight,
-        getMaxHeight: () => maxHeight,
-        onPreview: ({ width, height }) => updatePreview(width, height),
-        onCancel: ({ width, height }) => updatePreview(width, height),
-        onCommit: ({ width, height }) =>
-          applyCardSizeOverride(
-            state.temps.find((entry) => entry.id === item.id),
-            width,
-            height,
-            layout.baseWidth,
-            layout.naturalHeight
-          )
-      });
-    }
+    const commentCard = null;
+    const commentText = null;
 
     const detailPayload = {
       type: 'Температура',
@@ -8829,12 +8728,6 @@ function renderTemperature(track, dates, chartWidth) {
     if (item.isFlagged) {
       circle.classList.add('is-flagged-shape');
       valueLabel.classList.add('is-flagged-text');
-      if (commentText) {
-        commentText.classList.add('is-flagged-text');
-      }
-      if (commentCard) {
-        commentCard.classList.add('is-flagged-shape');
-      }
       const indicator = appendFlagIndicator(x - 10, y, { anchor: 'end' });
       if (indicator) {
         indicator.classList.add('is-flagged-text');
@@ -8855,27 +8748,6 @@ function renderTemperature(track, dates, chartWidth) {
     });
 
     const dragElements = [circle, valueLabel];
-    if (commentCard && commentText) {
-      dragElements.push(commentCard, commentText);
-      attachDetails(commentCard, detailPayload, circle, item.id, editInfo, {
-        inlineEditor: {
-          fieldNames: ['comment'],
-          preferredWidth: 260,
-          focusField: 'comment',
-          compact: true
-        },
-        highlightInlineEditor: null
-      });
-      attachDetails(commentText, detailPayload, circle, item.id, editInfo, {
-        inlineEditor: {
-          fieldNames: ['comment'],
-          preferredWidth: 260,
-          focusField: 'comment',
-          compact: true
-        },
-        highlightInlineEditor: null
-      });
-    }
     registerDraggable(dragElements, {
       type: 'temperature',
       id: item.id,
