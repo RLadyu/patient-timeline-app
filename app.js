@@ -8540,8 +8540,8 @@ function getTrackContentLayer(track) {
   const group = createSvgElement('g', { 'data-track-layer': track.key });
   const scale = getTrackContentScale(track);
   if (scale !== 1) {
-    const translateY = track.top - track.top * scale;
-    group.setAttribute('transform', `translate(0 ${translateY}) scale(1 ${scale})`);
+    const translateY = track.top * (1 - scale);
+    group.setAttribute('transform', `scale(1 ${scale}) translate(0 ${translateY})`);
   }
   timelineSvg.appendChild(group);
   track.contentLayer = group;
