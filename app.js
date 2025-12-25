@@ -1933,6 +1933,85 @@ function measureEndoscopyLayout(items = []) {
   return { levelHeights: normalizedHeights, itemsById };
 }
 
+function getSingleDateCardText(item, key) {
+  switch (key) {
+    case 'neuro':
+      return item.status || '';
+    case 'lab':
+      return item.testType || '';
+    case 'event':
+      return getEventDisplayLabel(item);
+    default:
+      return '';
+  }
+}
+
+function measureSingleDateCardLayout(items = [], dates, trackKey) {
+  if (!Array.isArray(items) || !items.length) {
+    return { levelHeights: [], levelAssignments: new Map(), measurements: new Map() };
+  }
+  const fontScale = getCurrentFontScale();
+  const measurements = new Map();
+  const levelAssignments = new Map();
+  const levelRanges = [];
+  const levelHeights = [];
+  const collisionPadding = 12;
+
+  const sorted = [...items].sort((a, b) => parseDateTime(a.date, a.time) - parseDateTime(b.date, b.time));
+  const maxWidth = SINGLE_DATE_CARD_MAX_WIDTH;
+
+  sorted.forEach((item) => {
+    const text = getSingleDateCardText(item, trackKey);
+    const itemFontScale = getEffectiveChartFontScale(item);
+    const widthOverride = parseWidthOverride(item.chartWidthOverride);
+    const heightOverride = parseHeightOverride(item.chartHeightOverride);
+    const layout = buildSingleDateCardLayout(text, itemFontScale, {
+      widthOverride,
+      heightOverride,
+      maxWidth
+    });
+
+    const width = layout.width;
+    const center = getXPosition(item.date, dates);
+    const start = center - width / 2;
+    const end = center + width / 2;
+    let level = 0;
+
+    while (
+      levelRanges[level] &&
+      levelRanges[level].some((range) => !(end + collisionPadding < range.start || start - collisionPadding > range.end))
+    ) {
+      level += 1;
+    }
+    if (!levelRanges[level]) {
+      levelRanges[level] = [];
+    }
+    levelRanges[level].push({ start, end });
+
+    const height = Math.max(layout.height, SINGLE_DATE_CARD_MIN_HEIGHT);
+    levelHeights[level] = Math.max(levelHeights[level] || 0, height);
+    levelAssignments.set(item.id, level);
+    measurements.set(item.id, {
+      ...layout,
+      height,
+      width
+    });
+  });
+
+  const normalizedHeights = levelHeights.map((height) => Math.max(height, SINGLE_DATE_CARD_MIN_HEIGHT));
+  return { levelHeights: normalizedHeights, levelAssignments, measurements };
+}
+
+function computeSingleDateTrackHeight(trackMinHeight, layout = {}) {
+  const levelHeights = layout.levelHeights || [];
+  if (!levelHeights.length) {
+    return trackMinHeight;
+  }
+  const spacing = (levelHeights.length - 1) * SINGLE_DATE_CARD_GAP;
+  const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
+  return Math.max(trackMinHeight, blockHeight + spacing + 48);
+}
+
 const LAB_TEST_TYPES = ['Микроскопия', 'МГМ', 'Посев на ППС', 'Посев на ЖПС'];
 const SURGERY_RESECTION_TYPES = [
   'атипичная (клиновидная) резекция',
@@ -7089,6 +7168,12 @@ function getTrackLayout(metricsByKey, visibleKeys, dates) {
       height = computeSupportTrackHeight(metricsByKey?.support, dates);
     } else if (track.key === 'endoscopy') {
       height = computeEndoscopyTrackHeight(metricsByKey?.endoscopy, dates);
+    } else if (track.key === 'neuro') {
+      height = computeSingleDateTrackHeight(track.minHeight, metricsByKey?.neuro?.layout);
+    } else if (track.key === 'lab') {
+      height = computeSingleDateTrackHeight(track.minHeight, metricsByKey?.lab?.layout);
+    } else if (track.key === 'event') {
+      height = computeSingleDateTrackHeight(track.minHeight, metricsByKey?.event?.layout);
     }
     const groupId = TRACK_GROUP_BY_KEY[key] || key;
     if (previousGroup && groupId !== previousGroup) {
@@ -8345,8 +8430,24 @@ function renderTimeline() {
   const therapyMetrics = isTrackVisible('therapy') ? getTherapyMetrics() : { intervals: [], totalLevels: 0 };
   const supportMetrics = isTrackVisible('support') ? getSupportiveMetrics() : { intervals: [], totalLevels: 0 };
   const endoscopyMetrics = isTrackVisible('endoscopy') ? getEndoscopyMetrics() : { items: [], totalLevels: 0 };
+  const neuroMetrics = isTrackVisible('neuro')
+    ? { items: [...state.neuro], layout: measureSingleDateCardLayout(state.neuro, dates, 'neuro') }
+    : { items: [], layout: { levelHeights: [], levelAssignments: new Map(), measurements: new Map() } };
+  const labMetrics = isTrackVisible('lab')
+    ? { items: [...state.labDiagnostics], layout: measureSingleDateCardLayout(state.labDiagnostics, dates, 'lab') }
+    : { items: [], layout: { levelHeights: [], levelAssignments: new Map(), measurements: new Map() } };
+  const eventMetrics = isTrackVisible('event')
+    ? { items: [...state.events], layout: measureSingleDateCardLayout(state.events, dates, 'event') }
+    : { items: [], layout: { levelHeights: [], levelAssignments: new Map(), measurements: new Map() } };
   const tracks = getTrackLayout(
-    { therapy: therapyMetrics, support: supportMetrics, endoscopy: endoscopyMetrics },
+    {
+      therapy: therapyMetrics,
+      support: supportMetrics,
+      endoscopy: endoscopyMetrics,
+      neuro: neuroMetrics,
+      lab: labMetrics,
+      event: eventMetrics
+    },
     visibleTrackKeys,
     dates
   );
@@ -8394,6 +8495,22 @@ function renderTimeline() {
       maxContentRight = Math.max(maxContentRight, center + width / 2 + 20);
     });
   }
+
+  const expandForSingleDate = (metrics, trackKey) => {
+    if (!metrics?.layout || !Array.isArray(metrics.items)) {
+      return;
+    }
+    metrics.items.forEach((item) => {
+      const measurement = metrics.layout.measurements?.get(item.id);
+      const width = measurement?.width || SINGLE_DATE_CARD_MIN_WIDTH;
+      const center = getXPosition(item.date, dates);
+      maxContentRight = Math.max(maxContentRight, center + width / 2 + 20);
+    });
+  };
+
+  expandForSingleDate(neuroMetrics, 'neuro');
+  expandForSingleDate(labMetrics, 'lab');
+  expandForSingleDate(eventMetrics, 'event');
 
   baseWidth = Math.max(baseWidth, maxContentRight + RIGHT_MARGIN);
   const chartWidth = Math.max(MIN_WIDTH, baseWidth || MIN_WIDTH);
@@ -8532,10 +8649,10 @@ function renderTimeline() {
   renderEndoscopy(tracks.find((track) => track.key === 'endoscopy'), dates, chartWidth, endoscopyMetrics);
   renderSurgery(tracks.find((track) => track.key === 'surgery'), dates);
   renderRadiology(tracks.find((track) => track.key === 'radiology'), dates);
-  renderNeuro(tracks.find((track) => track.key === 'neuro'), dates, chartWidth);
+  renderNeuro(tracks.find((track) => track.key === 'neuro'), dates, chartWidth, neuroMetrics);
   renderLiver(tracks.find((track) => track.key === 'liver'), dates, chartWidth);
-  renderLabDiagnostics(tracks.find((track) => track.key === 'lab'), dates, chartWidth);
-  renderEvents(tracks.find((track) => track.key === 'event'), dates, chartWidth);
+  renderLabDiagnostics(tracks.find((track) => track.key === 'lab'), dates, chartWidth, labMetrics);
+  renderEvents(tracks.find((track) => track.key === 'event'), dates, chartWidth, eventMetrics);
   renderLegend(chartWidth, chartHeight, bottomMargin, visibleTrackKeys);
   updateZoomButtons();
 
@@ -9845,43 +9962,39 @@ function renderRadiology(track, dates) {
   });
 }
 
-function renderNeuro(track, dates, chartWidth) {
+function renderNeuro(track, dates, chartWidth, metrics) {
   if (!track) return;
   const sorted = [...state.neuro].sort((a, b) => parseDate(a.date) - parseDate(b.date));
   if (!sorted.length) return;
 
-  const centerY = track.top + track.height / 2;
-  const levelSpacing = 34;
-  const counts = new Map();
-  const processed = new Map();
-  sorted.forEach((item) => {
-    counts.set(item.date, (counts.get(item.date) || 0) + 1);
+  const layout = metrics?.layout || { levelHeights: [], levelAssignments: new Map(), measurements: new Map() };
+  const levelHeights = layout.levelHeights || [];
+  const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
+  const spacing = levelHeights.length ? (levelHeights.length - 1) * SINGLE_DATE_CARD_GAP : 0;
+  const startY = track.top + Math.max((track.height - (blockHeight + spacing)) / 2, 12);
+
+  const levelOffsets = [];
+  let cursorY = startY;
+  levelHeights.forEach((height, level) => {
+    levelOffsets[level] = cursorY;
+    cursorY += height + SINGLE_DATE_CARD_GAP;
   });
 
   sorted.forEach((item) => {
     const x = getXPosition(item.date, dates);
-    const count = counts.get(item.date) || 1;
-    const index = processed.get(item.date) || 0;
-    const offsetIndex = count > 1 ? index - (count - 1) / 2 : 0;
-    processed.set(item.date, index + 1);
-    const markerY = centerY + offsetIndex * levelSpacing;
     const fontScale = getEffectiveChartFontScale(item);
-    const widthOverride = parseWidthOverride(item.chartWidthOverride);
-    const heightOverride = parseHeightOverride(item.chartHeightOverride);
+    const measurement = layout.measurements?.get(item.id);
+    const baseLayout = measurement || buildSingleDateCardLayout(item.status, fontScale, {});
     const maxWidth = Math.max(
-      SINGLE_DATE_CARD_MIN_WIDTH,
+      baseLayout.baseWidth,
       Math.min(SINGLE_DATE_CARD_MAX_WIDTH, chartWidth - LEFT_MARGIN - RIGHT_MARGIN)
     );
-    const layout = buildSingleDateCardLayout(item.status, fontScale, {
-      widthOverride,
-      heightOverride,
-      maxWidth
-    });
-    const maxHeight = Math.max(layout.naturalHeight, track.height - 12);
-    const cardHeight = clampCardHeight(layout.height, layout.naturalHeight, maxHeight);
-    const desiredY = markerY - cardHeight - SINGLE_DATE_CARD_GAP;
-    const cardY = clampCardY(desiredY, track, cardHeight);
-    const centered = computeCenteredCardX(x, layout.width, chartWidth);
+    const cardWidth = clampCardWidth(baseLayout.width, baseLayout.baseWidth, maxWidth);
+    const centered = computeCenteredCardX(x, cardWidth, chartWidth);
+    const level = layout.levelAssignments?.get(item.id) ?? item.__level ?? 0;
+    const cardHeight = Math.max(baseLayout.height, SINGLE_DATE_CARD_MIN_HEIGHT);
+    const cardY = clampCardY(levelOffsets[level] ?? startY, track, cardHeight);
+    const markerY = cardY + cardHeight + SINGLE_DATE_CARD_GAP;
     const marker = createSvgElement('circle', {
       cx: x,
       cy: markerY,
@@ -9893,7 +10006,7 @@ function renderNeuro(track, dates, chartWidth) {
     const card = createSvgElement('rect', {
       x: centered.x,
       y: cardY,
-      width: layout.width,
+      width: cardWidth,
       height: cardHeight,
       rx: 10,
       ry: 10,
@@ -9903,13 +10016,13 @@ function renderNeuro(track, dates, chartWidth) {
 
     const label = createSvgElement('text', {
       x: centered.center,
-      y: cardY + layout.paddingY,
+      y: cardY + baseLayout.paddingY,
       class: 'neuro-label',
       'text-anchor': 'middle',
       'dominant-baseline': 'hanging'
     });
     label.style.fontSize = `${12 * fontScale}px`;
-    applyProvidedLines(label, layout.lines, layout.lineHeight);
+    applyProvidedLines(label, baseLayout.lines, baseLayout.lineHeight);
     timelineSvg.appendChild(label);
 
     const editInfo = { type: 'neuro', id: item.id };
@@ -9952,7 +10065,7 @@ function renderNeuro(track, dates, chartWidth) {
 
     const handleSize = RESIZE_HANDLE_SIZE;
     const handle = createSvgElement('rect', {
-      x: centered.x + layout.width - handleSize,
+      x: centered.x + cardWidth - handleSize,
       y: cardY + cardHeight - handleSize,
       width: handleSize,
       height: handleSize,
@@ -9963,12 +10076,12 @@ function renderNeuro(track, dates, chartWidth) {
     timelineSvg.appendChild(handle);
 
     const updatePreview = (nextWidth, nextHeight) => {
-      const previewWidth = clampCardWidth(nextWidth, layout.baseWidth, maxWidth);
-      const previewMaxChars = estimateMaxCharsForWidth(previewWidth - layout.paddingX * 2, fontScale);
+      const previewWidth = clampCardWidth(nextWidth, baseLayout.baseWidth, maxWidth);
+      const previewMaxChars = estimateMaxCharsForWidth(previewWidth - baseLayout.paddingX * 2, fontScale);
       const previewLines = wrapTextToLines(item.status, previewMaxChars, Infinity);
       const previewNaturalHeight = Math.max(
         SINGLE_DATE_CARD_MIN_HEIGHT,
-        previewLines.length * layout.lineHeight + layout.paddingY * 2
+        previewLines.length * baseLayout.lineHeight + baseLayout.paddingY * 2
       );
       const previewHeight = Math.max(nextHeight, previewNaturalHeight);
       const previewCenter = computeCenteredCardX(x, previewWidth, chartWidth);
@@ -9977,8 +10090,8 @@ function renderNeuro(track, dates, chartWidth) {
       card.setAttribute('width', previewWidth);
       card.setAttribute('height', previewHeight);
       label.setAttribute('x', previewCenter.center);
-      label.setAttribute('y', cardY + layout.paddingY);
-      applyProvidedLines(label, previewLines, layout.lineHeight);
+      label.setAttribute('y', cardY + baseLayout.paddingY);
+      applyProvidedLines(label, previewLines, baseLayout.lineHeight);
       handle.setAttribute('x', previewCenter.x + previewWidth - handleSize);
       handle.setAttribute('y', cardY + previewHeight - handleSize);
     };
@@ -9994,10 +10107,10 @@ function renderNeuro(track, dates, chartWidth) {
         const current = Number(card.getAttribute('height'));
         return Number.isFinite(current) && current > 0 ? current : cardHeight;
       },
-      getMinWidth: () => layout.baseWidth,
+      getMinWidth: () => baseLayout.baseWidth,
       getMaxWidth: () => maxWidth,
-      getMinHeight: () => layout.naturalHeight,
-      getMaxHeight: () => maxHeight,
+      getMinHeight: () => baseLayout.naturalHeight,
+      getMaxHeight: () => Math.max(baseLayout.naturalHeight, track.height - 12),
       onPreview: ({ width, height }) => updatePreview(width, height),
       onCancel: ({ width, height }) => updatePreview(width, height),
       onCommit: ({ width, height }) =>
@@ -10005,8 +10118,8 @@ function renderNeuro(track, dates, chartWidth) {
           state.neuro.find((entry) => entry.id === item.id),
           width,
           height,
-          layout.baseWidth,
-          layout.naturalHeight
+          baseLayout.baseWidth,
+          baseLayout.naturalHeight
         )
     });
 
@@ -10108,45 +10221,40 @@ function renderLiver(track, dates, chartWidth) {
   });
 }
 
-function renderLabDiagnostics(track, dates, chartWidth) {
+function renderLabDiagnostics(track, dates, chartWidth, metrics) {
   if (!track) return;
   const sorted = [...state.labDiagnostics].sort((a, b) => parseDateTime(a.date, a.time) - parseDateTime(b.date, b.time));
   if (!sorted.length) return;
 
-  const centerY = track.top + track.height / 2;
-  const levelSpacing = 32;
-  const counts = new Map();
-  sorted.forEach((item) => {
-    counts.set(item.date, (counts.get(item.date) || 0) + 1);
+  const layout = metrics?.layout || { levelHeights: [], levelAssignments: new Map(), measurements: new Map() };
+  const levelHeights = layout.levelHeights || [];
+  const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
+  const spacing = levelHeights.length ? (levelHeights.length - 1) * SINGLE_DATE_CARD_GAP : 0;
+  const startY = track.top + Math.max((track.height - (blockHeight + spacing)) / 2, 12);
+
+  const levelOffsets = [];
+  let cursorY = startY;
+  levelHeights.forEach((height, level) => {
+    levelOffsets[level] = cursorY;
+    cursorY += height + SINGLE_DATE_CARD_GAP;
   });
-  const processed = new Map();
 
   sorted.forEach((item) => {
-    const count = counts.get(item.date) || 1;
-    const index = processed.get(item.date) || 0;
-    const offsetIndex = count > 1 ? index - (count - 1) / 2 : 0;
-    processed.set(item.date, index + 1);
-
     const x = getXPosition(item.date, dates);
-    const markerY = centerY + offsetIndex * levelSpacing;
 
     const fontScale = getEffectiveChartFontScale(item);
-    const widthOverride = parseWidthOverride(item.chartWidthOverride);
-    const heightOverride = parseHeightOverride(item.chartHeightOverride);
+    const measurement = layout.measurements?.get(item.id);
+    const baseLayout = measurement || buildSingleDateCardLayout(item.testType, fontScale, {});
     const maxWidth = Math.max(
-      SINGLE_DATE_CARD_MIN_WIDTH,
+      baseLayout.baseWidth,
       Math.min(SINGLE_DATE_CARD_MAX_WIDTH, chartWidth - LEFT_MARGIN - RIGHT_MARGIN)
     );
-    const layout = buildSingleDateCardLayout(item.testType, fontScale, {
-      widthOverride,
-      heightOverride,
-      maxWidth
-    });
-    const maxHeight = Math.max(layout.naturalHeight, track.height - 12);
-    const cardHeight = clampCardHeight(layout.height, layout.naturalHeight, maxHeight);
-    const desiredY = markerY - cardHeight - SINGLE_DATE_CARD_GAP;
-    const cardY = clampCardY(desiredY, track, cardHeight);
-    const centered = computeCenteredCardX(x, layout.width, chartWidth);
+    const cardWidth = clampCardWidth(baseLayout.width, baseLayout.baseWidth, maxWidth);
+    const centered = computeCenteredCardX(x, cardWidth, chartWidth);
+    const level = layout.levelAssignments?.get(item.id) ?? item.__level ?? 0;
+    const cardHeight = Math.max(baseLayout.height, SINGLE_DATE_CARD_MIN_HEIGHT);
+    const cardY = clampCardY(levelOffsets[level] ?? startY, track, cardHeight);
+    const markerY = cardY + cardHeight + SINGLE_DATE_CARD_GAP;
     const marker = createSvgElement('rect', {
       x: x - 9,
       y: markerY - 9,
@@ -10161,7 +10269,7 @@ function renderLabDiagnostics(track, dates, chartWidth) {
     const card = createSvgElement('rect', {
       x: centered.x,
       y: cardY,
-      width: layout.width,
+      width: cardWidth,
       height: cardHeight,
       rx: 10,
       ry: 10,
@@ -10171,13 +10279,13 @@ function renderLabDiagnostics(track, dates, chartWidth) {
 
     const label = createSvgElement('text', {
       x: centered.center,
-      y: cardY + layout.paddingY,
+      y: cardY + baseLayout.paddingY,
       class: 'lab-label',
       'text-anchor': 'middle',
       'dominant-baseline': 'hanging'
     });
     label.style.fontSize = `${12 * fontScale}px`;
-    applyProvidedLines(label, layout.lines, layout.lineHeight);
+    applyProvidedLines(label, baseLayout.lines, baseLayout.lineHeight);
     timelineSvg.appendChild(label);
 
     const detail = {
@@ -10218,7 +10326,7 @@ function renderLabDiagnostics(track, dates, chartWidth) {
 
     const handleSize = RESIZE_HANDLE_SIZE;
     const handle = createSvgElement('rect', {
-      x: centered.x + layout.width - handleSize,
+      x: centered.x + cardWidth - handleSize,
       y: cardY + cardHeight - handleSize,
       width: handleSize,
       height: handleSize,
@@ -10229,12 +10337,12 @@ function renderLabDiagnostics(track, dates, chartWidth) {
     timelineSvg.appendChild(handle);
 
     const updatePreview = (nextWidth, nextHeight) => {
-      const previewWidth = clampCardWidth(nextWidth, layout.baseWidth, maxWidth);
-      const previewMaxChars = estimateMaxCharsForWidth(previewWidth - layout.paddingX * 2, fontScale);
+      const previewWidth = clampCardWidth(nextWidth, baseLayout.baseWidth, maxWidth);
+      const previewMaxChars = estimateMaxCharsForWidth(previewWidth - baseLayout.paddingX * 2, fontScale);
       const previewLines = wrapTextToLines(item.testType, previewMaxChars, Infinity);
       const previewNaturalHeight = Math.max(
         SINGLE_DATE_CARD_MIN_HEIGHT,
-        previewLines.length * layout.lineHeight + layout.paddingY * 2
+        previewLines.length * baseLayout.lineHeight + baseLayout.paddingY * 2
       );
       const previewHeight = Math.max(nextHeight, previewNaturalHeight);
       const previewCenter = computeCenteredCardX(x, previewWidth, chartWidth);
@@ -10243,8 +10351,8 @@ function renderLabDiagnostics(track, dates, chartWidth) {
       card.setAttribute('width', previewWidth);
       card.setAttribute('height', previewHeight);
       label.setAttribute('x', previewCenter.center);
-      label.setAttribute('y', cardY + layout.paddingY);
-      applyProvidedLines(label, previewLines, layout.lineHeight);
+      label.setAttribute('y', cardY + baseLayout.paddingY);
+      applyProvidedLines(label, previewLines, baseLayout.lineHeight);
       handle.setAttribute('x', previewCenter.x + previewWidth - handleSize);
       handle.setAttribute('y', cardY + previewHeight - handleSize);
     };
@@ -10260,10 +10368,10 @@ function renderLabDiagnostics(track, dates, chartWidth) {
         const current = Number(card.getAttribute('height'));
         return Number.isFinite(current) && current > 0 ? current : cardHeight;
       },
-      getMinWidth: () => layout.baseWidth,
+      getMinWidth: () => baseLayout.baseWidth,
       getMaxWidth: () => maxWidth,
-      getMinHeight: () => layout.naturalHeight,
-      getMaxHeight: () => maxHeight,
+      getMinHeight: () => baseLayout.naturalHeight,
+      getMaxHeight: () => Math.max(baseLayout.naturalHeight, track.height - 12),
       onPreview: ({ width, height }) => updatePreview(width, height),
       onCancel: ({ width, height }) => updatePreview(width, height),
       onCommit: ({ width, height }) =>
@@ -10271,8 +10379,8 @@ function renderLabDiagnostics(track, dates, chartWidth) {
           state.labDiagnostics.find((entry) => entry.id === item.id),
           width,
           height,
-          layout.baseWidth,
-          layout.naturalHeight
+          baseLayout.baseWidth,
+          baseLayout.naturalHeight
         )
     });
 
@@ -10284,45 +10392,41 @@ function renderLabDiagnostics(track, dates, chartWidth) {
   });
 }
 
-function renderEvents(track, dates, chartWidth) {
+function renderEvents(track, dates, chartWidth, metrics) {
   if (!track) return;
   const sorted = [...state.events].sort((a, b) => parseDateTime(a.date, a.time) - parseDateTime(b.date, b.time));
   if (!sorted.length) return;
 
-  const centerY = track.top + track.height / 2;
   const markerSize = 10;
-  const levelSpacing = 34;
-  const counts = new Map();
-  const processed = new Map();
-  sorted.forEach((item) => {
-    counts.set(item.date, (counts.get(item.date) || 0) + 1);
+  const layout = metrics?.layout || { levelHeights: [], levelAssignments: new Map(), measurements: new Map() };
+  const levelHeights = layout.levelHeights || [];
+  const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
+  const spacing = levelHeights.length ? (levelHeights.length - 1) * SINGLE_DATE_CARD_GAP : 0;
+  const startY = track.top + Math.max((track.height - (blockHeight + spacing)) / 2, 12);
+
+  const levelOffsets = [];
+  let cursorY = startY;
+  levelHeights.forEach((height, level) => {
+    levelOffsets[level] = cursorY;
+    cursorY += height + SINGLE_DATE_CARD_GAP;
   });
 
   sorted.forEach((item) => {
     const x = getXPosition(item.date, dates);
-    const count = counts.get(item.date) || 1;
-    const index = processed.get(item.date) || 0;
-    const offsetIndex = count > 1 ? index - (count - 1) / 2 : 0;
-    processed.set(item.date, index + 1);
-    const markerY = centerY + offsetIndex * levelSpacing;
     const itemFontScale = getEffectiveChartFontScale(item);
-    const widthOverride = parseWidthOverride(item.chartWidthOverride);
-    const heightOverride = parseHeightOverride(item.chartHeightOverride);
+    const labelText = getEventDisplayLabel(item);
+    const measurement = layout.measurements?.get(item.id);
+    const baseLayout = measurement || buildSingleDateCardLayout(labelText, itemFontScale, {});
     const maxWidth = Math.max(
-      SINGLE_DATE_CARD_MIN_WIDTH,
+      baseLayout.baseWidth,
       Math.min(SINGLE_DATE_CARD_MAX_WIDTH, chartWidth - LEFT_MARGIN - RIGHT_MARGIN)
     );
-    const labelText = getEventDisplayLabel(item);
-    const layout = buildSingleDateCardLayout(labelText, itemFontScale, {
-      widthOverride,
-      heightOverride,
-      maxWidth
-    });
-    const maxHeight = Math.max(layout.naturalHeight, track.height - 12);
-    const cardHeight = clampCardHeight(layout.height, layout.naturalHeight, maxHeight);
-    const desiredY = markerY - cardHeight - SINGLE_DATE_CARD_GAP;
-    const cardY = clampCardY(desiredY, track, cardHeight);
-    const centered = computeCenteredCardX(x, layout.width, chartWidth);
+    const cardWidth = clampCardWidth(baseLayout.width, baseLayout.baseWidth, maxWidth);
+    const centered = computeCenteredCardX(x, cardWidth, chartWidth);
+    const level = layout.levelAssignments?.get(item.id) ?? item.__level ?? 0;
+    const cardHeight = Math.max(baseLayout.height, SINGLE_DATE_CARD_MIN_HEIGHT);
+    const cardY = clampCardY(levelOffsets[level] ?? startY, track, cardHeight);
+    const markerY = cardY + cardHeight + SINGLE_DATE_CARD_GAP;
     const path = createSvgElement('path', {
       d: `M ${x} ${markerY - markerSize} L ${x + markerSize} ${markerY} L ${x} ${markerY + markerSize} L ${x - markerSize} ${markerY} Z`,
       class: 'event-marker'
@@ -10332,7 +10436,7 @@ function renderEvents(track, dates, chartWidth) {
     const card = createSvgElement('rect', {
       x: centered.x,
       y: cardY,
-      width: layout.width,
+      width: cardWidth,
       height: cardHeight,
       rx: 10,
       ry: 10,
@@ -10342,13 +10446,13 @@ function renderEvents(track, dates, chartWidth) {
 
     const label = createSvgElement('text', {
       x: centered.center,
-      y: cardY + layout.paddingY,
+      y: cardY + baseLayout.paddingY,
       class: 'event-label',
       'text-anchor': 'middle',
       'dominant-baseline': 'hanging'
     });
     label.style.fontSize = `${12 * itemFontScale}px`;
-    applyProvidedLines(label, layout.lines, layout.lineHeight);
+    applyProvidedLines(label, baseLayout.lines, baseLayout.lineHeight);
     timelineSvg.appendChild(label);
 
     const detailPayload = {
@@ -10416,7 +10520,7 @@ function renderEvents(track, dates, chartWidth) {
 
     const handleSize = RESIZE_HANDLE_SIZE;
     const handle = createSvgElement('rect', {
-      x: centered.x + layout.width - handleSize,
+      x: centered.x + cardWidth - handleSize,
       y: cardY + cardHeight - handleSize,
       width: handleSize,
       height: handleSize,
@@ -10427,12 +10531,12 @@ function renderEvents(track, dates, chartWidth) {
     timelineSvg.appendChild(handle);
 
     const updatePreview = (nextWidth, nextHeight) => {
-      const previewWidth = clampCardWidth(nextWidth, layout.baseWidth, maxWidth);
-      const previewMaxChars = estimateMaxCharsForWidth(previewWidth - layout.paddingX * 2, itemFontScale);
+      const previewWidth = clampCardWidth(nextWidth, baseLayout.baseWidth, maxWidth);
+      const previewMaxChars = estimateMaxCharsForWidth(previewWidth - baseLayout.paddingX * 2, itemFontScale);
       const previewLines = wrapTextToLines(labelText, previewMaxChars, Infinity);
       const previewNaturalHeight = Math.max(
         SINGLE_DATE_CARD_MIN_HEIGHT,
-        previewLines.length * layout.lineHeight + layout.paddingY * 2
+        previewLines.length * baseLayout.lineHeight + baseLayout.paddingY * 2
       );
       const previewHeight = Math.max(nextHeight, previewNaturalHeight);
       const previewCenter = computeCenteredCardX(x, previewWidth, chartWidth);
@@ -10441,8 +10545,8 @@ function renderEvents(track, dates, chartWidth) {
       card.setAttribute('width', previewWidth);
       card.setAttribute('height', previewHeight);
       label.setAttribute('x', previewCenter.center);
-      label.setAttribute('y', cardY + layout.paddingY);
-      applyProvidedLines(label, previewLines, layout.lineHeight);
+      label.setAttribute('y', cardY + baseLayout.paddingY);
+      applyProvidedLines(label, previewLines, baseLayout.lineHeight);
       handle.setAttribute('x', previewCenter.x + previewWidth - handleSize);
       handle.setAttribute('y', cardY + previewHeight - handleSize);
     };
@@ -10458,10 +10562,10 @@ function renderEvents(track, dates, chartWidth) {
         const current = Number(card.getAttribute('height'));
         return Number.isFinite(current) && current > 0 ? current : cardHeight;
       },
-      getMinWidth: () => layout.baseWidth,
+      getMinWidth: () => baseLayout.baseWidth,
       getMaxWidth: () => maxWidth,
-      getMinHeight: () => layout.naturalHeight,
-      getMaxHeight: () => maxHeight,
+      getMinHeight: () => baseLayout.naturalHeight,
+      getMaxHeight: () => Math.max(baseLayout.naturalHeight, track.height - 12),
       onPreview: ({ width, height }) => updatePreview(width, height),
       onCancel: ({ width, height }) => updatePreview(width, height),
       onCommit: ({ width, height }) =>
@@ -10469,8 +10573,8 @@ function renderEvents(track, dates, chartWidth) {
           state.events.find((entry) => entry.id === item.id),
           width,
           height,
-          layout.baseWidth,
-          layout.naturalHeight
+          baseLayout.baseWidth,
+          baseLayout.naturalHeight
         )
     });
 
