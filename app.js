@@ -365,6 +365,10 @@ const SVG_STYLE_TEXT = `
   .endoscopy-title{font-size:calc(12px * var(--font-scale));font-weight:700;font-family:'Inter','Segoe UI',sans-serif;fill:${ENDOSCOPY_TITLE_COLOR};}
   .endoscopy-intervention{font-size:calc(12px * var(--font-scale));font-family:'Inter','Segoe UI',sans-serif;fill:${ENDOSCOPY_TEXT_COLOR};}
   .endoscopy-complication{font-size:calc(12px * var(--font-scale));font-family:'Inter','Segoe UI',sans-serif;fill:${ENDOSCOPY_TEXT_COLOR};}
+  .event-card{fill:rgba(17,24,39,0.06);stroke:${COLORS.event};stroke-width:1.4;}
+  .lab-card{fill:rgba(14,165,233,0.12);stroke:${COLORS.lab};stroke-width:1.4;}
+  .neuro-card{fill:rgba(139,92,246,0.12);stroke:${COLORS.neuro};stroke-width:1.4;}
+  .temperature-comment-card{fill:rgba(37,99,235,0.1);stroke:${COLORS.accent};stroke-width:1.2;}
   .surgery-marker{fill:${COLORS.surgery};stroke:#ffffff;stroke-width:2;}
   .surgery-label{font-size:calc(12px * var(--font-scale));font-family:'Inter','Segoe UI',sans-serif;fill:#000000;}
   .radiology-marker{fill:${COLORS.radiology};stroke:#ffffff;stroke-width:2;}
@@ -1352,6 +1356,17 @@ function parseHeightOverride(value) {
   return Math.round(numeric);
 }
 
+function parseWidthOverride(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return null;
+  }
+  return Math.round(numeric);
+}
+
 function parseOffsetValue(value) {
   if (value === null || value === undefined || value === '') {
     return 0;
@@ -1451,6 +1466,93 @@ function getEndoscopyHeightOverride(item) {
     return null;
   }
   return parseHeightOverride(item.chartHeightOverride);
+}
+
+function getEndoscopyWidthOverride(item) {
+  if (!item) {
+    return null;
+  }
+  return parseWidthOverride(item.chartWidthOverride);
+}
+
+function clampCardWidth(value, minWidth, maxWidth) {
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized)) {
+    return minWidth;
+  }
+  const min = Number.isFinite(minWidth) ? minWidth : 0;
+  const max = Number.isFinite(maxWidth) ? maxWidth : min;
+  return Math.min(Math.max(normalized, min), max);
+}
+
+function clampCardHeight(value, minHeight, maxHeight) {
+  const normalized = Number(value);
+  if (!Number.isFinite(normalized)) {
+    return minHeight;
+  }
+  const min = Number.isFinite(minHeight) ? minHeight : 0;
+  const max = Number.isFinite(maxHeight) ? maxHeight : min;
+  return Math.min(Math.max(normalized, min), max);
+}
+
+function computeCenteredCardX(centerX, width, chartWidth) {
+  const minX = LEFT_MARGIN;
+  const maxX = Math.max(minX, chartWidth - RIGHT_MARGIN - width);
+  const clampedX = Math.min(Math.max(centerX - width / 2, minX), maxX);
+  return {
+    x: clampedX,
+    center: clampedX + width / 2
+  };
+}
+
+function clampCardY(desiredY, track, height) {
+  if (!track) {
+    return desiredY;
+  }
+  const minY = track.top + 6;
+  const maxY = track.top + track.height - height - 6;
+  if (!Number.isFinite(maxY) || maxY < minY) {
+    return minY;
+  }
+  return Math.min(Math.max(desiredY, minY), maxY);
+}
+
+function buildSingleDateCardLayout(text, fontScale, options = {}) {
+  const minWidth = Number.isFinite(options.minWidth) ? options.minWidth : SINGLE_DATE_CARD_MIN_WIDTH;
+  const maxWidth = Number.isFinite(options.maxWidth) ? options.maxWidth : SINGLE_DATE_CARD_MAX_WIDTH;
+  const minHeight = Number.isFinite(options.minHeight) ? options.minHeight : SINGLE_DATE_CARD_MIN_HEIGHT;
+  const paddingX = (options.paddingX ?? SINGLE_DATE_CARD_PADDING_X) * fontScale;
+  const paddingY = (options.paddingY ?? SINGLE_DATE_CARD_PADDING_Y) * fontScale;
+  const lineHeight = (options.lineHeight ?? SINGLE_DATE_CARD_LINE_HEIGHT) * fontScale;
+  const widthOverride = options.widthOverride ?? null;
+  const heightOverride = options.heightOverride ?? null;
+
+  const baseMaxChars = estimateMaxCharsForWidth(minWidth - paddingX * 2, fontScale);
+  const baseLines = wrapTextToLines(text, baseMaxChars, Infinity);
+  const maxLineLength = baseLines.reduce((max, line) => Math.max(max, line.length), 0);
+  const resolvedMaxWidth = Math.max(minWidth, maxWidth);
+  const baseWidth = Math.min(
+    Math.max(minWidth, maxLineLength * SVG_CHAR_WIDTH * fontScale + paddingX * 2),
+    resolvedMaxWidth
+  );
+
+  const width = clampCardWidth(widthOverride ?? baseWidth, minWidth, resolvedMaxWidth);
+  const maxChars = estimateMaxCharsForWidth(width - paddingX * 2, fontScale);
+  const lines = wrapTextToLines(text, maxChars, Infinity);
+  const naturalHeight = Math.max(minHeight, lines.length * lineHeight + paddingY * 2);
+  const height = heightOverride ? Math.max(naturalHeight, heightOverride) : naturalHeight;
+
+  return {
+    width,
+    height,
+    baseWidth,
+    naturalHeight,
+    lines,
+    lineHeight,
+    paddingX,
+    paddingY,
+    maxChars
+  };
 }
 
 function clampChartFontScale(value) {
@@ -1678,54 +1780,63 @@ function measureEndoscopyLayout(items = []) {
       maxLevel = level;
     }
 
+    const fontScale = baseFontScale * getChartFontScaleValue(item);
+    const widthOverride = getEndoscopyWidthOverride(item);
+
     const typeLabels = Array.isArray(item.procedures)
       ? item.procedures.map((procedure) => getEndoscopyTypeLabel(procedure.type)).filter(Boolean)
       : [];
     const titleText = typeLabels.length ? typeLabels.join(' • ') : 'Эндоскопическая процедура';
-    const fontScale = baseFontScale * getChartFontScaleValue(item);
+
+    const summary = summarizeEndoscopyProcedures(item.procedures);
+    const interventionsText = getEndoscopyDisplaySummary(item, summary.summary);
+    const complicationText = formatEndoscopyComplications(summary.complications);
+
+    const fallbackLines = [
+      ...wrapTextToLines(titleText, 32, Infinity),
+      ...wrapTextToLines(interventionsText, 32, Infinity),
+      ...wrapTextToLines(complicationText, 32, Infinity)
+    ];
+    const fallbackMaxLine = fallbackLines.reduce((max, line) => Math.max(max, line.length), 0);
+    const minWidth = Math.max(
+      ENDOSCOPY_CARD_MIN_WIDTH,
+      fallbackMaxLine * SVG_CHAR_WIDTH * fontScale + ENDOSCOPY_PADDING_X * 2
+    );
+    const maxWidth = Math.max(minWidth, ENDOSCOPY_CARD_MAX_WIDTH);
+    const baseWidth = Math.min(Math.max(240, minWidth), maxWidth);
+    const cardWidth = clampCardWidth(widthOverride ?? baseWidth, minWidth, maxWidth);
+
+    const maxChars = estimateMaxCharsForWidth(cardWidth - ENDOSCOPY_PADDING_X * 2, fontScale);
+    const titleLines = wrapTextToLines(titleText, maxChars, Infinity);
+    const interventionsLines = wrapTextToLines(interventionsText, maxChars, Infinity);
+    const complicationLines = wrapTextToLines(complicationText, maxChars, Infinity);
+
     const lineHeight = ENDOSCOPY_LABEL_LINE_HEIGHT * fontScale;
     const paddingTop = (ENDOSCOPY_PADDING_Y / 2) * fontScale;
     const paddingBottom = paddingTop;
     const sectionSpacing = 6 * fontScale;
 
-    const titleLines = wrapTextToLines(titleText, 28, Infinity);
-
-    const summary = summarizeEndoscopyProcedures(item.procedures);
-    const interventionsText = getEndoscopyDisplaySummary(item, summary.summary);
-    const interventionsLines = wrapTextToLines(interventionsText, 32, Infinity);
-
-    const complicationText = formatEndoscopyComplications(summary.complications);
-    const complicationLines = wrapTextToLines(complicationText, 30, Infinity);
-
     let contentHeight = paddingTop;
-    let maxChars = 0;
-
     if (titleLines.length) {
       contentHeight += titleLines.length * lineHeight;
-      maxChars = Math.max(maxChars, ...titleLines.map((line) => line.length));
       if (interventionsLines.length || complicationLines.length) {
         contentHeight += sectionSpacing;
       }
     }
-
     if (interventionsLines.length) {
       contentHeight += interventionsLines.length * lineHeight;
-      maxChars = Math.max(maxChars, ...interventionsLines.map((line) => line.length));
       if (complicationLines.length) {
         contentHeight += sectionSpacing;
       }
     }
-
     if (complicationLines.length) {
       contentHeight += complicationLines.length * lineHeight;
-      maxChars = Math.max(maxChars, ...complicationLines.map((line) => line.length));
     }
-
     contentHeight += paddingBottom;
+
     const overrideHeight = getEndoscopyHeightOverride(item);
     const naturalHeight = Math.max(ENDOSCOPY_ITEM_HEIGHT, contentHeight);
     const rectHeight = overrideHeight ? Math.max(naturalHeight, overrideHeight) : naturalHeight;
-    const minWidth = Math.max(64, maxChars * SVG_CHAR_WIDTH * fontScale + 32);
 
     levelHeights[level] = Math.max(levelHeights[level] || 0, rectHeight);
 
@@ -1733,6 +1844,9 @@ function measureEndoscopyLayout(items = []) {
       rectHeight,
       naturalHeight,
       minWidth,
+      maxWidth,
+      baseWidth,
+      cardWidth,
       titleLines,
       interventionsLines,
       complicationLines,
@@ -1888,6 +2002,7 @@ const DATA_EXPORT_FIELDS = [
   { key: 'chartLabelOverride', label: 'Подпись на графике' },
   { key: 'chartSummaryOverride', label: 'Краткое описание' },
   { key: 'chartHeightOverride', label: 'Высота элемента' },
+  { key: 'chartWidthOverride', label: 'Ширина элемента' },
   { key: 'chartOffsetY', label: 'Смещение по Y' },
   { key: 'chartFontScale', label: 'Масштаб подписи' },
   { key: 'iconKey', label: 'Иконка' },
@@ -1936,6 +2051,7 @@ const OPTIONAL_IMPORT_HEADERS = new Set(
     'chartLabelOverride',
     'chartSummaryOverride',
     'chartHeightOverride',
+    'chartWidthOverride',
     'chartOffsetY',
     'chartFontScale',
     'iconKey',
@@ -1947,7 +2063,7 @@ const OPTIONAL_IMPORT_HEADERS = new Set(
   )
 );
 const DATA_EXPORT_FILENAME = 'timeline-data.csv';
-const DATA_EXPORT_VERSION = '1.9.0';
+const DATA_EXPORT_VERSION = '2.0.0';
 
 const EXPORT_TYPE_ORDER = new Map([
   ['temperature', 0],
@@ -3032,6 +3148,17 @@ const ENDOSCOPY_ROW_SPACING = 20;
 const ENDOSCOPY_MIN_HEIGHT = 170;
 const ENDOSCOPY_LABEL_LINE_HEIGHT = 14;
 const ENDOSCOPY_PADDING_Y = 28;
+const ENDOSCOPY_PADDING_X = 24;
+const ENDOSCOPY_CARD_MIN_WIDTH = 220;
+const ENDOSCOPY_CARD_MAX_WIDTH = 560;
+
+const SINGLE_DATE_CARD_MIN_WIDTH = 160;
+const SINGLE_DATE_CARD_MAX_WIDTH = 420;
+const SINGLE_DATE_CARD_MIN_HEIGHT = 48;
+const SINGLE_DATE_CARD_PADDING_X = 14;
+const SINGLE_DATE_CARD_PADDING_Y = 10;
+const SINGLE_DATE_CARD_LINE_HEIGHT = 14;
+const SINGLE_DATE_CARD_GAP = 10;
 const CHART_FONT_SCALE_MIN = 0.5;
 const CHART_FONT_SCALE_MAX = 3;
 const CHART_FONT_STEP_PX = 1;
@@ -6705,6 +6832,9 @@ function getEndoscopyMetrics() {
 }
 
 function estimateEndoscopyCardWidth(measurement, fontScale) {
+  if (measurement?.cardWidth) {
+    return measurement.cardWidth;
+  }
   const minWidth = measurement?.minWidth || 0;
   const maxChars = measurement?.maxChars || 32;
   return Math.max(240, minWidth, maxChars * (SVG_CHAR_WIDTH * Math.max(fontScale, 0.85)) + 48);
@@ -7248,10 +7378,10 @@ function beginResize(event, handle, config = {}) {
   closeInlineEditor();
   finishChartLabelEditor(false);
 
-  const getValue = (fn, fallback) => {
+  const getValue = (fn, fallback, context) => {
     if (typeof fn === 'function') {
       try {
-        return fn();
+        return fn(context);
       } catch (error) {
         return fallback;
       }
@@ -7259,21 +7389,30 @@ function beginResize(event, handle, config = {}) {
     return fallback;
   };
 
+  const axis = config.axis === 'x' || config.axis === 'xy' ? config.axis : 'y';
+  const startWidth = getValue(config.getWidth, config.initialWidth || 0);
   const startHeight = getValue(config.getHeight, config.initialHeight || 0);
-  if (!Number.isFinite(startHeight) || startHeight <= 0) {
+
+  if (axis.includes('x') && (!Number.isFinite(startWidth) || startWidth <= 0)) {
     return;
   }
-
-  const minHeight = Math.max(8, getValue(config.getMinHeight, config.minHeight || 8));
-  const maxHeight = Math.max(minHeight, getValue(config.getMaxHeight, config.maxHeight || startHeight));
+  if (axis.includes('y') && (!Number.isFinite(startHeight) || startHeight <= 0)) {
+    return;
+  }
 
   resizeContext = {
     handle,
     config,
+    axis,
+    startX: event.clientX,
     startY: event.clientY,
+    startWidth,
     startHeight,
-    minHeight,
-    maxHeight,
+    minWidth: Math.max(8, getValue(config.getMinWidth, config.minWidth || 8)),
+    maxWidth: Math.max(8, getValue(config.getMaxWidth, config.maxWidth || startWidth || 0)),
+    minHeight: Math.max(8, getValue(config.getMinHeight, config.minHeight || 8)),
+    maxHeight: Math.max(8, getValue(config.getMaxHeight, config.maxHeight || startHeight || 0)),
+    currentWidth: startWidth,
     currentHeight: startHeight,
     changed: false
   };
@@ -7287,30 +7426,75 @@ function handleResizeMove(event) {
     return;
   }
 
-  const { config } = resizeContext;
+  const { config, axis } = resizeContext;
+  const dx = event.clientX - resizeContext.startX;
+  const dy = event.clientY - resizeContext.startY;
+  const xMultiplier = config.centered ? 2 : 1;
+
+  let nextWidth = resizeContext.startWidth;
+  let nextHeight = resizeContext.startHeight;
+
+  if (axis.includes('x')) {
+    nextWidth = resizeContext.startWidth + dx * xMultiplier;
+  }
+  if (axis.includes('y')) {
+    nextHeight = resizeContext.startHeight + dy;
+  }
+
+  resizeContext.currentWidth = nextWidth;
+  resizeContext.currentHeight = nextHeight;
+
+  const minWidth = Math.max(
+    8,
+    typeof config.getMinWidth === 'function'
+      ? Number(config.getMinWidth(resizeContext)) || resizeContext.minWidth
+      : resizeContext.minWidth
+  );
+  const maxWidth = Math.max(
+    minWidth,
+    typeof config.getMaxWidth === 'function'
+      ? Number(config.getMaxWidth(resizeContext)) || resizeContext.maxWidth
+      : resizeContext.maxWidth
+  );
   const minHeight = Math.max(
     8,
-    typeof config.getMinHeight === 'function' ? Number(config.getMinHeight()) || resizeContext.minHeight : resizeContext.minHeight
+    typeof config.getMinHeight === 'function'
+      ? Number(config.getMinHeight(resizeContext)) || resizeContext.minHeight
+      : resizeContext.minHeight
   );
   const maxHeight = Math.max(
     minHeight,
-    typeof config.getMaxHeight === 'function' ? Number(config.getMaxHeight()) || resizeContext.maxHeight : resizeContext.maxHeight
+    typeof config.getMaxHeight === 'function'
+      ? Number(config.getMaxHeight(resizeContext)) || resizeContext.maxHeight
+      : resizeContext.maxHeight
   );
 
-  let nextHeight = resizeContext.startHeight + (event.clientY - resizeContext.startY);
+  if (!Number.isFinite(nextWidth)) {
+    nextWidth = resizeContext.startWidth;
+  }
   if (!Number.isFinite(nextHeight)) {
     nextHeight = resizeContext.startHeight;
   }
-  nextHeight = Math.min(Math.max(nextHeight, minHeight), maxHeight);
 
+  if (axis.includes('x')) {
+    nextWidth = Math.min(Math.max(nextWidth, minWidth), maxWidth);
+  }
+  if (axis.includes('y')) {
+    nextHeight = Math.min(Math.max(nextHeight, minHeight), maxHeight);
+  }
+
+  resizeContext.currentWidth = nextWidth;
   resizeContext.currentHeight = nextHeight;
-  if (!resizeContext.changed && Math.abs(nextHeight - resizeContext.startHeight) >= RESIZE_THRESHOLD) {
+
+  const widthDelta = Math.abs(nextWidth - resizeContext.startWidth);
+  const heightDelta = Math.abs(nextHeight - resizeContext.startHeight);
+  if (!resizeContext.changed && (widthDelta >= RESIZE_THRESHOLD || heightDelta >= RESIZE_THRESHOLD)) {
     resizeContext.changed = true;
     suppressClick = true;
   }
 
   if (typeof config.onPreview === 'function') {
-    config.onPreview(nextHeight, resizeContext);
+    config.onPreview({ width: nextWidth, height: nextHeight }, resizeContext);
   }
 }
 
@@ -7327,18 +7511,23 @@ function handleResizeEnd() {
 
   if (!context.changed) {
     if (typeof context.config.onCancel === 'function') {
-      context.config.onCancel(context.startHeight, context);
+      context.config.onCancel({ width: context.startWidth, height: context.startHeight }, context);
     } else if (typeof context.config.onPreview === 'function') {
-      context.config.onPreview(context.startHeight, context);
+      context.config.onPreview({ width: context.startWidth, height: context.startHeight }, context);
     }
     return;
   }
 
   const commit = context.config.onCommit;
   if (typeof commit === 'function') {
-    const result = commit(context.currentHeight, context);
+    pushHistoryState();
+    const result = commit({ width: context.currentWidth, height: context.currentHeight }, context);
+    if (result === false && historyStack.length) {
+      historyStack.pop();
+      updateUndoButtonState();
+    }
     if (result === false && typeof context.config.onCancel === 'function') {
-      context.config.onCancel(context.startHeight, context);
+      context.config.onCancel({ width: context.startWidth, height: context.startHeight }, context);
     }
   }
 }
@@ -7729,7 +7918,6 @@ function applyTherapyHeightOverride(courseId, medicationId, newHeight, naturalHe
     return false;
   }
 
-  pushHistoryState();
   if (shouldRemove) {
     delete medication.chartHeightOverride;
   } else {
@@ -7783,7 +7971,6 @@ function applySupportHeightOverride(supportId, newHeight, naturalHeight) {
     return false;
   }
 
-  pushHistoryState();
   if (shouldRemove) {
     delete item.chartHeightOverride;
   } else {
@@ -7837,7 +8024,6 @@ function applyEndoscopyHeightOverride(entryId, newHeight, naturalHeight) {
     return false;
   }
 
-  pushHistoryState();
   if (shouldRemove) {
     delete item.chartHeightOverride;
   } else {
@@ -7845,6 +8031,44 @@ function applyEndoscopyHeightOverride(entryId, newHeight, naturalHeight) {
   }
   renderTimeline();
   return true;
+}
+
+function applyCardSizeOverride(item, nextWidth, nextHeight, baseWidth, baseHeight) {
+  if (!item) {
+    return false;
+  }
+  let changed = false;
+
+  const normalizedWidth = Math.round(Number(nextWidth));
+  if (Number.isFinite(normalizedWidth) && normalizedWidth > 0 && Number.isFinite(baseWidth)) {
+    const current = parseWidthOverride(item.chartWidthOverride) || 0;
+    const shouldRemove = normalizedWidth <= baseWidth + 1;
+    if (!shouldRemove && current !== normalizedWidth) {
+      item.chartWidthOverride = normalizedWidth;
+      changed = true;
+    } else if (shouldRemove && current) {
+      delete item.chartWidthOverride;
+      changed = true;
+    }
+  }
+
+  const normalizedHeight = Math.round(Number(nextHeight));
+  if (Number.isFinite(normalizedHeight) && normalizedHeight > 0 && Number.isFinite(baseHeight)) {
+    const current = parseHeightOverride(item.chartHeightOverride) || 0;
+    const shouldRemove = normalizedHeight <= baseHeight + 1;
+    if (!shouldRemove && current !== normalizedHeight) {
+      item.chartHeightOverride = normalizedHeight;
+      changed = true;
+    } else if (shouldRemove && current) {
+      delete item.chartHeightOverride;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    renderTimeline();
+  }
+  return changed;
 }
 
 function attachDetails(
@@ -8121,23 +8345,23 @@ function renderTimeline() {
   });
   timelineSvg.appendChild(axisLine);
 
-  renderTemperature(tracks.find((track) => track.key === 'temperature'), dates);
+  renderTemperature(tracks.find((track) => track.key === 'temperature'), dates, chartWidth);
   renderTherapy(tracks.find((track) => track.key === 'therapy'), dates, chartWidth, therapyMetrics);
   renderSupportiveTherapy(tracks.find((track) => track.key === 'support'), dates, chartWidth, supportMetrics);
   renderEndoscopy(tracks.find((track) => track.key === 'endoscopy'), dates, chartWidth, endoscopyMetrics);
   renderSurgery(tracks.find((track) => track.key === 'surgery'), dates);
   renderRadiology(tracks.find((track) => track.key === 'radiology'), dates);
-  renderNeuro(tracks.find((track) => track.key === 'neuro'), dates);
+  renderNeuro(tracks.find((track) => track.key === 'neuro'), dates, chartWidth);
   renderLiver(tracks.find((track) => track.key === 'liver'), dates, chartWidth);
-  renderLabDiagnostics(tracks.find((track) => track.key === 'lab'), dates);
-  renderEvents(tracks.find((track) => track.key === 'event'), dates);
+  renderLabDiagnostics(tracks.find((track) => track.key === 'lab'), dates, chartWidth);
+  renderEvents(tracks.find((track) => track.key === 'event'), dates, chartWidth);
   renderLegend(chartWidth, chartHeight, bottomMargin, visibleTrackKeys);
   updateZoomButtons();
 
   restoreSelection();
 }
 
-function renderTemperature(track, dates) {
+function renderTemperature(track, dates, chartWidth) {
   if (!track) return;
   const sorted = [...state.temps].sort((a, b) => parseDateTime(a.date, a.time) - parseDateTime(b.date, b.time));
   if (!sorted.length) return;
@@ -8187,17 +8411,108 @@ function renderTemperature(track, dates) {
     valueLabel.style.fontSize = `${12 * fontScale}px`;
     timelineSvg.appendChild(valueLabel);
 
-    let comment;
+    let commentCard = null;
+    let commentText = null;
+    let commentHandle = null;
     if (item.comment) {
-      comment = createSvgElement('text', {
-        x,
-        y: y - 28 * fontScale,
-        class: 'temperature-comment',
-        'text-anchor': 'middle'
+      const widthOverride = parseWidthOverride(item.chartWidthOverride);
+      const heightOverride = parseHeightOverride(item.chartHeightOverride);
+      const maxWidth = Math.max(
+        SINGLE_DATE_CARD_MIN_WIDTH,
+        Math.min(SINGLE_DATE_CARD_MAX_WIDTH, chartWidth - LEFT_MARGIN - RIGHT_MARGIN)
+      );
+      const layout = buildSingleDateCardLayout(item.comment, fontScale, {
+        widthOverride,
+        heightOverride,
+        maxWidth
       });
-      comment.textContent = item.comment;
-      comment.style.fontSize = `${12 * fontScale}px`;
-      timelineSvg.appendChild(comment);
+      const maxHeight = Math.max(layout.naturalHeight, track.height - 12);
+      const cardHeight = clampCardHeight(layout.height, layout.naturalHeight, maxHeight);
+      const desiredY = y - 24 * fontScale - cardHeight;
+      const cardY = clampCardY(desiredY, track, cardHeight);
+      const centered = computeCenteredCardX(x, layout.width, chartWidth);
+
+      commentCard = createSvgElement('rect', {
+        x: centered.x,
+        y: cardY,
+        width: layout.width,
+        height: cardHeight,
+        rx: 10,
+        ry: 10,
+        class: 'temperature-comment-card'
+      });
+      timelineSvg.appendChild(commentCard);
+
+      commentText = createSvgElement('text', {
+        x: centered.center,
+        y: cardY + layout.paddingY,
+        class: 'temperature-comment',
+        'text-anchor': 'middle',
+        'dominant-baseline': 'hanging'
+      });
+      commentText.style.fontSize = `${12 * fontScale}px`;
+      applyProvidedLines(commentText, layout.lines, layout.lineHeight);
+      timelineSvg.appendChild(commentText);
+
+      const handleSize = RESIZE_HANDLE_SIZE;
+      commentHandle = createSvgElement('rect', {
+        x: centered.x + layout.width - handleSize,
+        y: cardY + cardHeight - handleSize,
+        width: handleSize,
+        height: handleSize,
+        rx: 3,
+        ry: 3,
+        class: 'resize-handle temperature-resize-handle'
+      });
+      timelineSvg.appendChild(commentHandle);
+
+      const updatePreview = (nextWidth, nextHeight) => {
+        const previewWidth = clampCardWidth(nextWidth, layout.baseWidth, maxWidth);
+        const previewMaxChars = estimateMaxCharsForWidth(previewWidth - layout.paddingX * 2, fontScale);
+        const previewLines = wrapTextToLines(item.comment, previewMaxChars, Infinity);
+        const previewNaturalHeight = Math.max(
+          SINGLE_DATE_CARD_MIN_HEIGHT,
+          previewLines.length * layout.lineHeight + layout.paddingY * 2
+        );
+        const previewHeight = Math.max(nextHeight, previewNaturalHeight);
+        const previewCenter = computeCenteredCardX(x, previewWidth, chartWidth);
+
+        commentCard.setAttribute('x', previewCenter.x);
+        commentCard.setAttribute('width', previewWidth);
+        commentCard.setAttribute('height', previewHeight);
+        commentText.setAttribute('x', previewCenter.center);
+        commentText.setAttribute('y', cardY + layout.paddingY);
+        applyProvidedLines(commentText, previewLines, layout.lineHeight);
+        commentHandle.setAttribute('x', previewCenter.x + previewWidth - handleSize);
+        commentHandle.setAttribute('y', cardY + previewHeight - handleSize);
+      };
+
+      registerResizable(commentHandle, {
+        axis: 'xy',
+        centered: true,
+        getWidth: () => {
+          const current = Number(commentCard.getAttribute('width'));
+          return Number.isFinite(current) && current > 0 ? current : layout.width;
+        },
+        getHeight: () => {
+          const current = Number(commentCard.getAttribute('height'));
+          return Number.isFinite(current) && current > 0 ? current : cardHeight;
+        },
+        getMinWidth: () => layout.baseWidth,
+        getMaxWidth: () => maxWidth,
+        getMinHeight: () => layout.naturalHeight,
+        getMaxHeight: () => maxHeight,
+        onPreview: ({ width, height }) => updatePreview(width, height),
+        onCancel: ({ width, height }) => updatePreview(width, height),
+        onCommit: ({ width, height }) =>
+          applyCardSizeOverride(
+            state.temps.find((entry) => entry.id === item.id),
+            width,
+            height,
+            layout.baseWidth,
+            layout.naturalHeight
+          )
+      });
     }
 
     const detailPayload = {
@@ -8216,8 +8531,11 @@ function renderTemperature(track, dates) {
     if (item.isFlagged) {
       circle.classList.add('is-flagged-shape');
       valueLabel.classList.add('is-flagged-text');
-      if (comment) {
-        comment.classList.add('is-flagged-text');
+      if (commentText) {
+        commentText.classList.add('is-flagged-text');
+      }
+      if (commentCard) {
+        commentCard.classList.add('is-flagged-shape');
       }
       const indicator = appendFlagIndicator(x - 10, y, { anchor: 'end' });
       if (indicator) {
@@ -8239,9 +8557,18 @@ function renderTemperature(track, dates) {
     });
 
     const dragElements = [circle, valueLabel];
-    if (comment) {
-      dragElements.push(comment);
-      attachDetails(comment, detailPayload, circle, item.id, editInfo, {
+    if (commentCard && commentText) {
+      dragElements.push(commentCard, commentText);
+      attachDetails(commentCard, detailPayload, circle, item.id, editInfo, {
+        inlineEditor: {
+          fieldNames: ['comment'],
+          preferredWidth: 260,
+          focusField: 'comment',
+          compact: true
+        },
+        highlightInlineEditor: null
+      });
+      attachDetails(commentText, detailPayload, circle, item.id, editInfo, {
         inlineEditor: {
           fieldNames: ['comment'],
           preferredWidth: 260,
@@ -8505,6 +8832,7 @@ function renderTherapy(track, dates, chartWidth, metrics) {
     };
 
     registerResizable(handle, {
+      axis: 'y',
       getHeight: () => {
         const current = Number(rect.getAttribute('height'));
         return Number.isFinite(current) && current > 0 ? current : rectHeight;
@@ -8515,14 +8843,14 @@ function renderTherapy(track, dates, chartWidth, metrics) {
         const available = track.top + track.height - finalY - 6;
         return Math.max(minHeight, available);
       },
-      onPreview: (nextHeight) => {
-        updatePreviewHeight(nextHeight);
+      onPreview: ({ height }) => {
+        updatePreviewHeight(height);
       },
-      onCancel: () => {
-        updatePreviewHeight(rectHeight);
+      onCancel: ({ height }) => {
+        updatePreviewHeight(height);
       },
-      onCommit: (nextHeight) =>
-        applyTherapyHeightOverride(item.courseId, item.medicationId, nextHeight, naturalHeight)
+      onCommit: ({ height }) =>
+        applyTherapyHeightOverride(item.courseId, item.medicationId, height, naturalHeight)
     });
   });
 }
@@ -8719,6 +9047,7 @@ function renderSupportiveTherapy(track, dates, chartWidth, metrics) {
     };
 
     registerResizable(handle, {
+      axis: 'y',
       getHeight: () => {
         const current = Number(rect.getAttribute('height'));
         return Number.isFinite(current) && current > 0 ? current : rectHeight;
@@ -8729,13 +9058,13 @@ function renderSupportiveTherapy(track, dates, chartWidth, metrics) {
         const available = track.top + track.height - finalY - 6;
         return Math.max(minHeight, available);
       },
-      onPreview: (nextHeight) => {
-        updatePreviewHeight(nextHeight);
+      onPreview: ({ height }) => {
+        updatePreviewHeight(height);
       },
-      onCancel: () => {
-        updatePreviewHeight(rectHeight);
+      onCancel: ({ height }) => {
+        updatePreviewHeight(height);
       },
-      onCommit: (nextHeight) => applySupportHeightOverride(item.supportId, nextHeight, naturalHeight)
+      onCommit: ({ height }) => applySupportHeightOverride(item.supportId, height, naturalHeight)
     });
   });
 }
@@ -8775,6 +9104,10 @@ function renderEndoscopy(track, dates, chartWidth, metrics) {
     const measurement = layout.itemsById?.get(item.id) || {
       rectHeight: ENDOSCOPY_ITEM_HEIGHT,
       naturalHeight: ENDOSCOPY_ITEM_HEIGHT,
+      minWidth: ENDOSCOPY_CARD_MIN_WIDTH,
+      maxWidth: ENDOSCOPY_CARD_MAX_WIDTH,
+      baseWidth: ENDOSCOPY_CARD_MIN_WIDTH,
+      cardWidth: ENDOSCOPY_CARD_MIN_WIDTH,
       titleLines: wrapTextToLines('Эндоскопическая процедура', 28, Infinity),
       interventionsLines: [],
       complicationLines: [],
@@ -8802,11 +9135,18 @@ function renderEndoscopy(track, dates, chartWidth, metrics) {
     const offsetY = clampOffsetToBounds(storedOffset, bounds);
     const finalY = y + offsetY;
 
-    const cardWidth = estimateEndoscopyCardWidth(measurement, itemFontScale);
-    const minCenter = LEFT_MARGIN + cardWidth / 2;
-    const maxCenter = chartWidth - RIGHT_MARGIN - cardWidth / 2;
-    const cardCenter = Math.min(Math.max(xDate, minCenter), Math.max(minCenter, maxCenter));
-    const rectX = cardCenter - cardWidth / 2;
+    const maxCardWidth = Math.max(
+      measurement.minWidth || ENDOSCOPY_CARD_MIN_WIDTH,
+      Math.min(measurement.maxWidth || ENDOSCOPY_CARD_MAX_WIDTH, chartWidth - LEFT_MARGIN - RIGHT_MARGIN)
+    );
+    const cardWidth = clampCardWidth(
+      measurement.cardWidth || estimateEndoscopyCardWidth(measurement, itemFontScale),
+      measurement.minWidth || ENDOSCOPY_CARD_MIN_WIDTH,
+      maxCardWidth
+    );
+    const centered = computeCenteredCardX(xDate, cardWidth, chartWidth);
+    const rectX = centered.x;
+    const cardCenter = centered.center;
 
     const circleY = Math.max(track.top + 12, finalY - 12);
     const connector = createSvgElement('line', {
@@ -9003,29 +9343,123 @@ function renderEndoscopy(track, dates, chartWidth, metrics) {
     });
     timelineSvg.appendChild(handle);
 
-    const updatePreviewHeight = (nextHeight) => {
-      rect.setAttribute('height', nextHeight);
-      handle.setAttribute('y', finalY + nextHeight - handleSize);
+    const updatePreviewLayout = (nextWidth, nextHeight) => {
+      const previewWidth = clampCardWidth(
+        nextWidth,
+        measurement.minWidth || ENDOSCOPY_CARD_MIN_WIDTH,
+        maxCardWidth
+      );
+      const previewCenter = computeCenteredCardX(xDate, previewWidth, chartWidth);
+      rect.setAttribute('width', previewWidth);
+      rect.setAttribute('x', previewCenter.x);
+      handle.setAttribute('x', previewCenter.x + previewWidth - handleSize);
+
+      title.setAttribute('x', previewCenter.center);
+      if (interventionsLabel) {
+        interventionsLabel.setAttribute('x', previewCenter.center);
+      }
+      if (complicationLabel) {
+        complicationLabel.setAttribute('x', previewCenter.center);
+      }
+
+      const previewMaxChars = estimateMaxCharsForWidth(previewWidth - ENDOSCOPY_PADDING_X * 2, itemFontScale);
+      const previewTitleLines = wrapTextToLines(titleText, previewMaxChars, Infinity);
+      const previewInterventionLines = wrapTextToLines(interventionsText, previewMaxChars, Infinity);
+      const previewComplicationLines = wrapTextToLines(complicationText, previewMaxChars, Infinity);
+
+      let previewContentHeight = paddingTop;
+      if (previewTitleLines.length) {
+        previewContentHeight += previewTitleLines.length * lineHeight;
+        if (previewInterventionLines.length || previewComplicationLines.length) {
+          previewContentHeight += sectionSpacing;
+        }
+      }
+      if (previewInterventionLines.length) {
+        previewContentHeight += previewInterventionLines.length * lineHeight;
+        if (previewComplicationLines.length) {
+          previewContentHeight += sectionSpacing;
+        }
+      }
+      if (previewComplicationLines.length) {
+        previewContentHeight += previewComplicationLines.length * lineHeight;
+      }
+      previewContentHeight += paddingBottom;
+      const previewNaturalHeight = Math.max(ENDOSCOPY_ITEM_HEIGHT, previewContentHeight);
+      const previewHeight = Math.max(nextHeight, previewNaturalHeight);
+
+      rect.setAttribute('height', previewHeight);
+      handle.setAttribute('y', finalY + previewHeight - handleSize);
+
+      let previewCursorY = finalY + paddingTop;
+      title.setAttribute('y', previewCursorY);
+      const titleCount = applyProvidedLines(title, previewTitleLines, lineHeight);
+      if (titleCount) {
+        previewCursorY += titleCount * lineHeight + sectionSpacing;
+      }
+
+      if (interventionsLabel) {
+        interventionsLabel.setAttribute('y', previewCursorY);
+        const count =
+          applyProvidedLines(interventionsLabel, previewInterventionLines, lineHeight) ||
+          applyMultilineSvgText(interventionsLabel, interventionsText, {
+            maxChars: previewMaxChars,
+            maxLines: 2,
+            lineHeight
+          });
+        if (count) {
+          previewCursorY += count * lineHeight + sectionSpacing;
+        }
+      }
+
+      if (complicationLabel) {
+        const maxLines = previewCursorY + lineHeight * 2 <= finalY + previewHeight ? 2 : 1;
+        const maxStart = finalY + previewHeight - lineHeight * maxLines - 4;
+        const baseY = Math.min(previewCursorY, maxStart);
+        complicationLabel.setAttribute('y', baseY);
+        const count = applyProvidedLines(complicationLabel, previewComplicationLines, lineHeight);
+        if (!count) {
+          applyMultilineSvgText(complicationLabel, complicationText, {
+            maxChars: previewMaxChars,
+            maxLines,
+            lineHeight
+          });
+        }
+      }
     };
 
     registerResizable(handle, {
+      axis: 'xy',
+      centered: true,
+      getWidth: () => {
+        const current = Number(rect.getAttribute('width'));
+        return Number.isFinite(current) && current > 0 ? current : cardWidth;
+      },
       getHeight: () => {
         const current = Number(rect.getAttribute('height'));
         return Number.isFinite(current) && current > 0 ? current : rectHeight;
       },
+      getMinWidth: () => measurement.minWidth || ENDOSCOPY_CARD_MIN_WIDTH,
+      getMaxWidth: () => maxCardWidth,
       getMinHeight: () => Math.max(naturalHeight, ENDOSCOPY_ITEM_HEIGHT),
       getMaxHeight: () => {
         const minHeight = Math.max(naturalHeight, ENDOSCOPY_ITEM_HEIGHT);
         const available = track.top + track.height - finalY - 6;
         return Math.max(minHeight, available);
       },
-      onPreview: (nextHeight) => {
-        updatePreviewHeight(nextHeight);
+      onPreview: ({ width, height }) => {
+        updatePreviewLayout(width, height);
       },
-      onCancel: () => {
-        updatePreviewHeight(rectHeight);
+      onCancel: ({ width, height }) => {
+        updatePreviewLayout(width, height);
       },
-      onCommit: (nextHeight) => applyEndoscopyHeightOverride(item.id, nextHeight, naturalHeight)
+      onCommit: ({ width, height }) =>
+        applyCardSizeOverride(
+          state.endoscopy.find((entry) => entry.id === item.id),
+          width,
+          height,
+          measurement.baseWidth || cardWidth,
+          naturalHeight
+        )
     });
   });
 }
@@ -9230,31 +9664,71 @@ function renderRadiology(track, dates) {
   });
 }
 
-function renderNeuro(track, dates) {
+function renderNeuro(track, dates, chartWidth) {
   if (!track) return;
   const sorted = [...state.neuro].sort((a, b) => parseDate(a.date) - parseDate(b.date));
   if (!sorted.length) return;
 
   const centerY = track.top + track.height / 2;
+  const levelSpacing = 34;
+  const counts = new Map();
+  const processed = new Map();
+  sorted.forEach((item) => {
+    counts.set(item.date, (counts.get(item.date) || 0) + 1);
+  });
 
   sorted.forEach((item) => {
     const x = getXPosition(item.date, dates);
+    const count = counts.get(item.date) || 1;
+    const index = processed.get(item.date) || 0;
+    const offsetIndex = count > 1 ? index - (count - 1) / 2 : 0;
+    processed.set(item.date, index + 1);
+    const markerY = centerY + offsetIndex * levelSpacing;
     const fontScale = getEffectiveChartFontScale(item);
+    const widthOverride = parseWidthOverride(item.chartWidthOverride);
+    const heightOverride = parseHeightOverride(item.chartHeightOverride);
+    const maxWidth = Math.max(
+      SINGLE_DATE_CARD_MIN_WIDTH,
+      Math.min(SINGLE_DATE_CARD_MAX_WIDTH, chartWidth - LEFT_MARGIN - RIGHT_MARGIN)
+    );
+    const layout = buildSingleDateCardLayout(item.status, fontScale, {
+      widthOverride,
+      heightOverride,
+      maxWidth
+    });
+    const maxHeight = Math.max(layout.naturalHeight, track.height - 12);
+    const cardHeight = clampCardHeight(layout.height, layout.naturalHeight, maxHeight);
+    const desiredY = markerY - cardHeight - SINGLE_DATE_CARD_GAP;
+    const cardY = clampCardY(desiredY, track, cardHeight);
+    const centered = computeCenteredCardX(x, layout.width, chartWidth);
     const marker = createSvgElement('circle', {
       cx: x,
-      cy: centerY,
+      cy: markerY,
       r: 8,
       class: 'neuro-marker'
     });
     timelineSvg.appendChild(marker);
 
-    const label = createSvgElement('text', {
-      x: x + 12,
-      y: centerY + 4,
-      class: 'neuro-label'
+    const card = createSvgElement('rect', {
+      x: centered.x,
+      y: cardY,
+      width: layout.width,
+      height: cardHeight,
+      rx: 10,
+      ry: 10,
+      class: 'neuro-card'
     });
-    label.textContent = item.status;
+    timelineSvg.appendChild(card);
+
+    const label = createSvgElement('text', {
+      x: centered.center,
+      y: cardY + layout.paddingY,
+      class: 'neuro-label',
+      'text-anchor': 'middle',
+      'dominant-baseline': 'hanging'
+    });
     label.style.fontSize = `${12 * fontScale}px`;
+    applyProvidedLines(label, layout.lines, layout.lineHeight);
     timelineSvg.appendChild(label);
 
     const editInfo = { type: 'neuro', id: item.id };
@@ -9271,6 +9745,7 @@ function renderNeuro(track, dates) {
     };
 
     attachDetails(marker, detailPayload, marker, item.id, editInfo);
+    attachDetails(card, detailPayload, marker, item.id, editInfo);
     attachDetails(label, detailPayload, marker, item.id, editInfo, {
       inlineEditor: {
         fieldNames: ['status', 'comment'],
@@ -9284,7 +9759,8 @@ function renderNeuro(track, dates) {
     if (item.isFlagged) {
       marker.classList.add('is-flagged-shape');
       label.classList.add('is-flagged-text');
-      const indicator = appendFlagIndicator(x - 12, centerY, {
+      card.classList.add('is-flagged-shape');
+      const indicator = appendFlagIndicator(x - 12, markerY, {
         anchor: 'end'
       });
       if (indicator) {
@@ -9293,7 +9769,67 @@ function renderNeuro(track, dates) {
       }
     }
 
-    registerDraggable([marker, label], {
+    const handleSize = RESIZE_HANDLE_SIZE;
+    const handle = createSvgElement('rect', {
+      x: centered.x + layout.width - handleSize,
+      y: cardY + cardHeight - handleSize,
+      width: handleSize,
+      height: handleSize,
+      rx: 3,
+      ry: 3,
+      class: 'resize-handle neuro-resize-handle'
+    });
+    timelineSvg.appendChild(handle);
+
+    const updatePreview = (nextWidth, nextHeight) => {
+      const previewWidth = clampCardWidth(nextWidth, layout.baseWidth, maxWidth);
+      const previewMaxChars = estimateMaxCharsForWidth(previewWidth - layout.paddingX * 2, fontScale);
+      const previewLines = wrapTextToLines(item.status, previewMaxChars, Infinity);
+      const previewNaturalHeight = Math.max(
+        SINGLE_DATE_CARD_MIN_HEIGHT,
+        previewLines.length * layout.lineHeight + layout.paddingY * 2
+      );
+      const previewHeight = Math.max(nextHeight, previewNaturalHeight);
+      const previewCenter = computeCenteredCardX(x, previewWidth, chartWidth);
+
+      card.setAttribute('x', previewCenter.x);
+      card.setAttribute('width', previewWidth);
+      card.setAttribute('height', previewHeight);
+      label.setAttribute('x', previewCenter.center);
+      label.setAttribute('y', cardY + layout.paddingY);
+      applyProvidedLines(label, previewLines, layout.lineHeight);
+      handle.setAttribute('x', previewCenter.x + previewWidth - handleSize);
+      handle.setAttribute('y', cardY + previewHeight - handleSize);
+    };
+
+    registerResizable(handle, {
+      axis: 'xy',
+      centered: true,
+      getWidth: () => {
+        const current = Number(card.getAttribute('width'));
+        return Number.isFinite(current) && current > 0 ? current : layout.width;
+      },
+      getHeight: () => {
+        const current = Number(card.getAttribute('height'));
+        return Number.isFinite(current) && current > 0 ? current : cardHeight;
+      },
+      getMinWidth: () => layout.baseWidth,
+      getMaxWidth: () => maxWidth,
+      getMinHeight: () => layout.naturalHeight,
+      getMaxHeight: () => maxHeight,
+      onPreview: ({ width, height }) => updatePreview(width, height),
+      onCancel: ({ width, height }) => updatePreview(width, height),
+      onCommit: ({ width, height }) =>
+        applyCardSizeOverride(
+          state.neuro.find((entry) => entry.id === item.id),
+          width,
+          height,
+          layout.baseWidth,
+          layout.naturalHeight
+        )
+    });
+
+    registerDraggable([marker, card, label], {
       type: 'neuro',
       id: item.id,
       startDate: item.date
@@ -9391,7 +9927,7 @@ function renderLiver(track, dates, chartWidth) {
   });
 }
 
-function renderLabDiagnostics(track, dates) {
+function renderLabDiagnostics(track, dates, chartWidth) {
   if (!track) return;
   const sorted = [...state.labDiagnostics].sort((a, b) => parseDateTime(a.date, a.time) - parseDateTime(b.date, b.time));
   if (!sorted.length) return;
@@ -9411,12 +9947,28 @@ function renderLabDiagnostics(track, dates) {
     processed.set(item.date, index + 1);
 
     const x = getXPosition(item.date, dates);
-    const y = centerY + offsetIndex * levelSpacing;
+    const markerY = centerY + offsetIndex * levelSpacing;
 
     const fontScale = getEffectiveChartFontScale(item);
+    const widthOverride = parseWidthOverride(item.chartWidthOverride);
+    const heightOverride = parseHeightOverride(item.chartHeightOverride);
+    const maxWidth = Math.max(
+      SINGLE_DATE_CARD_MIN_WIDTH,
+      Math.min(SINGLE_DATE_CARD_MAX_WIDTH, chartWidth - LEFT_MARGIN - RIGHT_MARGIN)
+    );
+    const layout = buildSingleDateCardLayout(item.testType, fontScale, {
+      widthOverride,
+      heightOverride,
+      maxWidth
+    });
+    const maxHeight = Math.max(layout.naturalHeight, track.height - 12);
+    const cardHeight = clampCardHeight(layout.height, layout.naturalHeight, maxHeight);
+    const desiredY = markerY - cardHeight - SINGLE_DATE_CARD_GAP;
+    const cardY = clampCardY(desiredY, track, cardHeight);
+    const centered = computeCenteredCardX(x, layout.width, chartWidth);
     const marker = createSvgElement('rect', {
       x: x - 9,
-      y: y - 9,
+      y: markerY - 9,
       width: 18,
       height: 18,
       rx: 5,
@@ -9425,13 +9977,26 @@ function renderLabDiagnostics(track, dates) {
     });
     timelineSvg.appendChild(marker);
 
-    const label = createSvgElement('text', {
-      x: x + 14,
-      y: y + 4,
-      class: 'lab-label'
+    const card = createSvgElement('rect', {
+      x: centered.x,
+      y: cardY,
+      width: layout.width,
+      height: cardHeight,
+      rx: 10,
+      ry: 10,
+      class: 'lab-card'
     });
-    label.textContent = item.testType;
+    timelineSvg.appendChild(card);
+
+    const label = createSvgElement('text', {
+      x: centered.center,
+      y: cardY + layout.paddingY,
+      class: 'lab-label',
+      'text-anchor': 'middle',
+      'dominant-baseline': 'hanging'
+    });
     label.style.fontSize = `${12 * fontScale}px`;
+    applyProvidedLines(label, layout.lines, layout.lineHeight);
     timelineSvg.appendChild(label);
 
     const detail = {
@@ -9448,6 +10013,7 @@ function renderLabDiagnostics(track, dates) {
 
     const editInfo = { type: 'lab', id: item.id };
     attachDetails(marker, detail, marker, item.id, editInfo);
+    attachDetails(card, detail, marker, item.id, editInfo);
     attachDetails(label, detail, marker, item.id, editInfo, {
       inlineEditor: {
         fieldNames: ['testType', 'result'],
@@ -9461,14 +10027,75 @@ function renderLabDiagnostics(track, dates) {
     if (item.isFlagged) {
       marker.classList.add('is-flagged-shape');
       label.classList.add('is-flagged-text');
-      const indicator = appendFlagIndicator(x - 12, y, { anchor: 'end' });
+      card.classList.add('is-flagged-shape');
+      const indicator = appendFlagIndicator(x - 12, markerY, { anchor: 'end' });
       if (indicator) {
         indicator.classList.add('is-flagged-text');
         attachDetails(indicator, detail, marker, item.id, editInfo);
       }
     }
 
-    registerDraggable([marker, label], {
+    const handleSize = RESIZE_HANDLE_SIZE;
+    const handle = createSvgElement('rect', {
+      x: centered.x + layout.width - handleSize,
+      y: cardY + cardHeight - handleSize,
+      width: handleSize,
+      height: handleSize,
+      rx: 3,
+      ry: 3,
+      class: 'resize-handle lab-resize-handle'
+    });
+    timelineSvg.appendChild(handle);
+
+    const updatePreview = (nextWidth, nextHeight) => {
+      const previewWidth = clampCardWidth(nextWidth, layout.baseWidth, maxWidth);
+      const previewMaxChars = estimateMaxCharsForWidth(previewWidth - layout.paddingX * 2, fontScale);
+      const previewLines = wrapTextToLines(item.testType, previewMaxChars, Infinity);
+      const previewNaturalHeight = Math.max(
+        SINGLE_DATE_CARD_MIN_HEIGHT,
+        previewLines.length * layout.lineHeight + layout.paddingY * 2
+      );
+      const previewHeight = Math.max(nextHeight, previewNaturalHeight);
+      const previewCenter = computeCenteredCardX(x, previewWidth, chartWidth);
+
+      card.setAttribute('x', previewCenter.x);
+      card.setAttribute('width', previewWidth);
+      card.setAttribute('height', previewHeight);
+      label.setAttribute('x', previewCenter.center);
+      label.setAttribute('y', cardY + layout.paddingY);
+      applyProvidedLines(label, previewLines, layout.lineHeight);
+      handle.setAttribute('x', previewCenter.x + previewWidth - handleSize);
+      handle.setAttribute('y', cardY + previewHeight - handleSize);
+    };
+
+    registerResizable(handle, {
+      axis: 'xy',
+      centered: true,
+      getWidth: () => {
+        const current = Number(card.getAttribute('width'));
+        return Number.isFinite(current) && current > 0 ? current : layout.width;
+      },
+      getHeight: () => {
+        const current = Number(card.getAttribute('height'));
+        return Number.isFinite(current) && current > 0 ? current : cardHeight;
+      },
+      getMinWidth: () => layout.baseWidth,
+      getMaxWidth: () => maxWidth,
+      getMinHeight: () => layout.naturalHeight,
+      getMaxHeight: () => maxHeight,
+      onPreview: ({ width, height }) => updatePreview(width, height),
+      onCancel: ({ width, height }) => updatePreview(width, height),
+      onCommit: ({ width, height }) =>
+        applyCardSizeOverride(
+          state.labDiagnostics.find((entry) => entry.id === item.id),
+          width,
+          height,
+          layout.baseWidth,
+          layout.naturalHeight
+        )
+    });
+
+    registerDraggable([marker, card, label], {
       type: 'lab',
       id: item.id,
       startDate: item.date
@@ -9476,30 +10103,71 @@ function renderLabDiagnostics(track, dates) {
   });
 }
 
-function renderEvents(track, dates) {
+function renderEvents(track, dates, chartWidth) {
   if (!track) return;
   const sorted = [...state.events].sort((a, b) => parseDateTime(a.date, a.time) - parseDateTime(b.date, b.time));
   if (!sorted.length) return;
 
   const centerY = track.top + track.height / 2;
   const markerSize = 10;
+  const levelSpacing = 34;
+  const counts = new Map();
+  const processed = new Map();
+  sorted.forEach((item) => {
+    counts.set(item.date, (counts.get(item.date) || 0) + 1);
+  });
 
   sorted.forEach((item) => {
     const x = getXPosition(item.date, dates);
+    const count = counts.get(item.date) || 1;
+    const index = processed.get(item.date) || 0;
+    const offsetIndex = count > 1 ? index - (count - 1) / 2 : 0;
+    processed.set(item.date, index + 1);
+    const markerY = centerY + offsetIndex * levelSpacing;
     const itemFontScale = getEffectiveChartFontScale(item);
+    const widthOverride = parseWidthOverride(item.chartWidthOverride);
+    const heightOverride = parseHeightOverride(item.chartHeightOverride);
+    const maxWidth = Math.max(
+      SINGLE_DATE_CARD_MIN_WIDTH,
+      Math.min(SINGLE_DATE_CARD_MAX_WIDTH, chartWidth - LEFT_MARGIN - RIGHT_MARGIN)
+    );
+    const labelText = getEventDisplayLabel(item);
+    const layout = buildSingleDateCardLayout(labelText, itemFontScale, {
+      widthOverride,
+      heightOverride,
+      maxWidth
+    });
+    const maxHeight = Math.max(layout.naturalHeight, track.height - 12);
+    const cardHeight = clampCardHeight(layout.height, layout.naturalHeight, maxHeight);
+    const desiredY = markerY - cardHeight - SINGLE_DATE_CARD_GAP;
+    const cardY = clampCardY(desiredY, track, cardHeight);
+    const centered = computeCenteredCardX(x, layout.width, chartWidth);
     const path = createSvgElement('path', {
-      d: `M ${x} ${centerY - markerSize} L ${x + markerSize} ${centerY} L ${x} ${centerY + markerSize} L ${x - markerSize} ${centerY} Z`,
+      d: `M ${x} ${markerY - markerSize} L ${x + markerSize} ${markerY} L ${x} ${markerY + markerSize} L ${x - markerSize} ${markerY} Z`,
       class: 'event-marker'
     });
     timelineSvg.appendChild(path);
 
-    const label = createSvgElement('text', {
-      x: x + markerSize + 6,
-      y: centerY + 4,
-      class: 'event-label'
+    const card = createSvgElement('rect', {
+      x: centered.x,
+      y: cardY,
+      width: layout.width,
+      height: cardHeight,
+      rx: 10,
+      ry: 10,
+      class: 'event-card'
     });
-    label.textContent = getEventDisplayLabel(item);
+    timelineSvg.appendChild(card);
+
+    const label = createSvgElement('text', {
+      x: centered.center,
+      y: cardY + layout.paddingY,
+      class: 'event-label',
+      'text-anchor': 'middle',
+      'dominant-baseline': 'hanging'
+    });
     label.style.fontSize = `${12 * itemFontScale}px`;
+    applyProvidedLines(label, layout.lines, layout.lineHeight);
     timelineSvg.appendChild(label);
 
     const detailPayload = {
@@ -9517,6 +10185,7 @@ function renderEvents(track, dates) {
 
     const editInfo = { type: 'event', id: item.id };
     attachDetails(path, detailPayload, path, item.id, editInfo);
+    attachDetails(card, detailPayload, path, item.id, editInfo);
     attachDetails(label, detailPayload, path, item.id, editInfo, { inlineEditor: false });
 
     enableChartLabelOverrideEditing(label, {
@@ -9528,7 +10197,8 @@ function renderEvents(track, dates) {
     if (item.isFlagged) {
       path.classList.add('is-flagged-shape');
       label.classList.add('is-flagged-text');
-      const indicator = appendFlagIndicator(x - markerSize - 6, centerY, {
+      card.classList.add('is-flagged-shape');
+      const indicator = appendFlagIndicator(x - markerSize - 6, markerY, {
         anchor: 'end'
       });
       if (indicator) {
@@ -9542,7 +10212,7 @@ function renderEvents(track, dates) {
       const offset = normalizeIconOffset(item.iconOffset || { x: 6, y: -12 });
       const icon = createSvgElement('text', {
         x: x + markerSize + 6 + offset.x,
-        y: centerY - markerSize - 6 + offset.y,
+        y: markerY - markerSize - 6 + offset.y,
         class: 'event-icon'
       });
       icon.textContent = iconDef.glyph || '•';
@@ -9563,7 +10233,67 @@ function renderEvents(track, dates) {
       });
     }
 
-    registerDraggable([path, label], {
+    const handleSize = RESIZE_HANDLE_SIZE;
+    const handle = createSvgElement('rect', {
+      x: centered.x + layout.width - handleSize,
+      y: cardY + cardHeight - handleSize,
+      width: handleSize,
+      height: handleSize,
+      rx: 3,
+      ry: 3,
+      class: 'resize-handle event-resize-handle'
+    });
+    timelineSvg.appendChild(handle);
+
+    const updatePreview = (nextWidth, nextHeight) => {
+      const previewWidth = clampCardWidth(nextWidth, layout.baseWidth, maxWidth);
+      const previewMaxChars = estimateMaxCharsForWidth(previewWidth - layout.paddingX * 2, itemFontScale);
+      const previewLines = wrapTextToLines(labelText, previewMaxChars, Infinity);
+      const previewNaturalHeight = Math.max(
+        SINGLE_DATE_CARD_MIN_HEIGHT,
+        previewLines.length * layout.lineHeight + layout.paddingY * 2
+      );
+      const previewHeight = Math.max(nextHeight, previewNaturalHeight);
+      const previewCenter = computeCenteredCardX(x, previewWidth, chartWidth);
+
+      card.setAttribute('x', previewCenter.x);
+      card.setAttribute('width', previewWidth);
+      card.setAttribute('height', previewHeight);
+      label.setAttribute('x', previewCenter.center);
+      label.setAttribute('y', cardY + layout.paddingY);
+      applyProvidedLines(label, previewLines, layout.lineHeight);
+      handle.setAttribute('x', previewCenter.x + previewWidth - handleSize);
+      handle.setAttribute('y', cardY + previewHeight - handleSize);
+    };
+
+    registerResizable(handle, {
+      axis: 'xy',
+      centered: true,
+      getWidth: () => {
+        const current = Number(card.getAttribute('width'));
+        return Number.isFinite(current) && current > 0 ? current : layout.width;
+      },
+      getHeight: () => {
+        const current = Number(card.getAttribute('height'));
+        return Number.isFinite(current) && current > 0 ? current : cardHeight;
+      },
+      getMinWidth: () => layout.baseWidth,
+      getMaxWidth: () => maxWidth,
+      getMinHeight: () => layout.naturalHeight,
+      getMaxHeight: () => maxHeight,
+      onPreview: ({ width, height }) => updatePreview(width, height),
+      onCancel: ({ width, height }) => updatePreview(width, height),
+      onCommit: ({ width, height }) =>
+        applyCardSizeOverride(
+          state.events.find((entry) => entry.id === item.id),
+          width,
+          height,
+          layout.baseWidth,
+          layout.naturalHeight
+        )
+    });
+
+    registerDraggable([path, card, label], {
       type: 'event',
       id: item.id,
       startDate: item.date
@@ -10176,6 +10906,7 @@ function buildExportMetadataRow() {
     chartLabelOverride: '',
     chartSummaryOverride: '',
     chartHeightOverride: '',
+    chartWidthOverride: '',
     chartOffsetY: '',
     chartFontScale: '',
     flagged: '',
@@ -10210,7 +10941,8 @@ function buildExportRows() {
       courseComment: '',
       courseStartDate: '',
       courseEndDate: '',
-      chartHeightOverride: '',
+      chartHeightOverride: item.chartHeightOverride || '',
+      chartWidthOverride: item.chartWidthOverride || '',
       chartOffsetY: '',
       chartFontScale: item.chartFontScale || '',
       iconKey: '',
@@ -10245,7 +10977,8 @@ function buildExportRows() {
       courseComment: '',
       courseStartDate: '',
       courseEndDate: '',
-      chartHeightOverride: '',
+      chartHeightOverride: item.chartHeightOverride || '',
+      chartWidthOverride: item.chartWidthOverride || '',
       chartOffsetY: '',
       chartFontScale: item.chartFontScale || '',
       iconKey: '',
@@ -10281,6 +11014,7 @@ function buildExportRows() {
       courseStartDate: '',
       courseEndDate: '',
       chartHeightOverride: item.chartHeightOverride || '',
+      chartWidthOverride: '',
       chartOffsetY: '',
       chartFontScale: item.chartFontScale || '',
       iconKey: '',
@@ -10315,7 +11049,8 @@ function buildExportRows() {
       courseComment: '',
       courseStartDate: '',
       courseEndDate: '',
-      chartHeightOverride: '',
+      chartHeightOverride: item.chartHeightOverride || '',
+      chartWidthOverride: item.chartWidthOverride || '',
       chartOffsetY: '',
       chartFontScale: item.chartFontScale || '',
       iconKey: '',
@@ -10384,7 +11119,8 @@ function buildExportRows() {
       courseEndDate: '',
       chartLabelOverride: item.chartLabelOverride || '',
       chartSummaryOverride: '',
-      chartHeightOverride: '',
+      chartHeightOverride: item.chartHeightOverride || '',
+      chartWidthOverride: '',
       chartOffsetY: '',
       chartFontScale: item.chartFontScale || '',
       iconKey: '',
@@ -10454,6 +11190,7 @@ function buildExportRows() {
       chartLabelOverride: item.chartLabelOverride || '',
       chartSummaryOverride: '',
       chartHeightOverride: '',
+      chartWidthOverride: '',
       chartOffsetY: '',
       chartFontScale: item.chartFontScale || '',
       iconKey: '',
@@ -10490,7 +11227,8 @@ function buildExportRows() {
       courseEndDate: '',
       chartLabelOverride: item.chartLabelOverride || '',
       chartSummaryOverride: '',
-      chartHeightOverride: '',
+      chartHeightOverride: item.chartHeightOverride || '',
+      chartWidthOverride: item.chartWidthOverride || '',
       chartOffsetY: '',
       chartFontScale: item.chartFontScale || '',
       iconKey: item.iconKey || '',
@@ -10526,6 +11264,7 @@ function buildExportRows() {
       courseStartDate: '',
       courseEndDate: '',
       chartHeightOverride: item.chartHeightOverride || '',
+      chartWidthOverride: '',
       chartOffsetY: item.chartOffsetY !== undefined ? item.chartOffsetY : '',
       chartFontScale: item.chartFontScale || '',
       iconKey: '',
@@ -10567,6 +11306,7 @@ function buildExportRows() {
       chartLabelOverride: '',
       chartSummaryOverride: item.chartSummaryOverride || '',
       chartHeightOverride: item.chartHeightOverride || '',
+      chartWidthOverride: item.chartWidthOverride || '',
       chartOffsetY: item.chartOffsetY !== undefined ? item.chartOffsetY : '',
       chartFontScale: item.chartFontScale || '',
       iconKey: '',
@@ -10615,6 +11355,7 @@ function buildExportRows() {
         chartLabelOverride: medication.chartLabelOverride || '',
         chartSummaryOverride: '',
         chartHeightOverride: medication.chartHeightOverride || '',
+        chartWidthOverride: '',
         chartOffsetY: medication.chartOffsetY !== undefined ? medication.chartOffsetY : '',
         chartFontScale: medication.chartFontScale || '',
         iconKey: '',
@@ -10861,6 +11602,8 @@ function importDataFromCsv(text) {
           break;
         }
         const chartFontScale = parseCsvFontScale(entry.chartFontScale);
+        const chartWidthOverride = parseCsvNumber(entry.chartWidthOverride);
+        const chartHeightOverride = parseCsvNumber(entry.chartHeightOverride);
         nextState.temps.push({
           id: nextId('temp'),
           date: entry.date,
@@ -10868,7 +11611,13 @@ function importDataFromCsv(text) {
           value: entry.value,
           comment: entry.comment || '',
           isFlagged: parseCsvBoolean(entry.flagged),
-          ...(chartFontScale !== null ? { chartFontScale } : {})
+          ...(chartFontScale !== null ? { chartFontScale } : {}),
+          ...(Number.isFinite(chartWidthOverride) && chartWidthOverride > 0
+            ? { chartWidthOverride: Math.round(chartWidthOverride) }
+            : {}),
+          ...(Number.isFinite(chartHeightOverride) && chartHeightOverride > 0
+            ? { chartHeightOverride: Math.round(chartHeightOverride) }
+            : {})
         });
         break;
       }
@@ -10878,13 +11627,21 @@ function importDataFromCsv(text) {
           break;
         }
         const chartFontScale = parseCsvFontScale(entry.chartFontScale);
+        const chartWidthOverride = parseCsvNumber(entry.chartWidthOverride);
+        const chartHeightOverride = parseCsvNumber(entry.chartHeightOverride);
         nextState.neuro.push({
           id: nextId('neuro'),
           date: entry.date,
           status: entry.status,
           comment: entry.comment || '',
           isFlagged: parseCsvBoolean(entry.flagged),
-          ...(chartFontScale !== null ? { chartFontScale } : {})
+          ...(chartFontScale !== null ? { chartFontScale } : {}),
+          ...(Number.isFinite(chartWidthOverride) && chartWidthOverride > 0
+            ? { chartWidthOverride: Math.round(chartWidthOverride) }
+            : {}),
+          ...(Number.isFinite(chartHeightOverride) && chartHeightOverride > 0
+            ? { chartHeightOverride: Math.round(chartHeightOverride) }
+            : {})
         });
         break;
       }
@@ -10910,6 +11667,8 @@ function importDataFromCsv(text) {
           break;
         }
         const chartFontScale = parseCsvFontScale(entry.chartFontScale);
+        const chartWidthOverride = parseCsvNumber(entry.chartWidthOverride);
+        const chartHeightOverride = parseCsvNumber(entry.chartHeightOverride);
         nextState.labDiagnostics.push({
           id: nextId('lab'),
           date: entry.date,
@@ -10917,7 +11676,13 @@ function importDataFromCsv(text) {
           testType: entry.testType,
           result: entry.result || entry.comment || '',
           isFlagged: parseCsvBoolean(entry.flagged),
-          ...(chartFontScale !== null ? { chartFontScale } : {})
+          ...(chartFontScale !== null ? { chartFontScale } : {}),
+          ...(Number.isFinite(chartWidthOverride) && chartWidthOverride > 0
+            ? { chartWidthOverride: Math.round(chartWidthOverride) }
+            : {}),
+          ...(Number.isFinite(chartHeightOverride) && chartHeightOverride > 0
+            ? { chartHeightOverride: Math.round(chartHeightOverride) }
+            : {})
         });
         break;
       }
@@ -10999,6 +11764,8 @@ function importDataFromCsv(text) {
         }
         const chartLabelOverride = (entry.chartLabelOverride || '').trim();
         const chartFontScale = parseCsvFontScale(entry.chartFontScale);
+        const chartWidthOverride = parseCsvNumber(entry.chartWidthOverride);
+        const chartHeightOverride = parseCsvNumber(entry.chartHeightOverride);
         const iconKey = (entry.iconKey || '').trim();
         const iconOffsetX = parseCsvNumber(entry.iconOffsetX);
         const iconOffsetY = parseCsvNumber(entry.iconOffsetY);
@@ -11015,6 +11782,12 @@ function importDataFromCsv(text) {
         }
         if (chartFontScale !== null) {
           eventEntry.chartFontScale = chartFontScale;
+        }
+        if (Number.isFinite(chartWidthOverride) && chartWidthOverride > 0) {
+          eventEntry.chartWidthOverride = Math.round(chartWidthOverride);
+        }
+        if (Number.isFinite(chartHeightOverride) && chartHeightOverride > 0) {
+          eventEntry.chartHeightOverride = Math.round(chartHeightOverride);
         }
         if (iconKey && findEventIcon(iconKey)) {
           eventEntry.iconKey = iconKey;
@@ -11141,6 +11914,7 @@ function importDataFromCsv(text) {
         const flagged = parseCsvBoolean(entry.flagged);
         const chartSummaryOverride = (entry.chartSummaryOverride || '').trim();
         const chartHeightOverride = parseCsvNumber(entry.chartHeightOverride);
+        const chartWidthOverride = parseCsvNumber(entry.chartWidthOverride);
         const chartOffset = parseCsvNumber(entry.chartOffsetY);
         const chartFontScale = parseCsvFontScale(entry.chartFontScale);
         const endoscopyEntry = {
@@ -11156,6 +11930,9 @@ function importDataFromCsv(text) {
         }
         if (Number.isFinite(chartHeightOverride) && chartHeightOverride > 0) {
           endoscopyEntry.chartHeightOverride = Math.round(chartHeightOverride);
+        }
+        if (Number.isFinite(chartWidthOverride) && chartWidthOverride > 0) {
+          endoscopyEntry.chartWidthOverride = Math.round(chartWidthOverride);
         }
         if (Number.isFinite(chartOffset)) {
           endoscopyEntry.chartOffsetY = Math.round(chartOffset);
