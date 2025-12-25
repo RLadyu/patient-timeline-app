@@ -317,7 +317,8 @@ const state = {
       diagnostics: null,
       events: null
     },
-    trackGapOverride: {}
+    trackGapOverride: {},
+    trackHeightOverride: {}
   }
 };
 
@@ -383,6 +384,7 @@ const SVG_STYLE_TEXT = `
   .event-card{fill:rgba(17,24,39,0.06);stroke:${COLORS.event};stroke-width:1.4;}
   .lab-card{fill:rgba(14,165,233,0.12);stroke:${COLORS.lab};stroke-width:1.4;}
   .neuro-card{fill:rgba(139,92,246,0.12);stroke:${COLORS.neuro};stroke-width:1.4;}
+  .track-resize-handle{fill:#ffffff;stroke:${COLORS.muted};stroke-width:1.5;cursor:ns-resize;}
   .surgery-marker{fill:${COLORS.surgery};stroke:#ffffff;stroke-width:2;}
   .surgery-label{font-size:calc(12px * var(--font-scale));font-family:'Inter','Segoe UI',sans-serif;fill:#000000;}
   .radiology-marker{fill:${COLORS.radiology};stroke:#ffffff;stroke-width:2;}
@@ -1506,7 +1508,8 @@ function normalizeLayoutState(layout) {
     trackGap: clampNumber(source.trackGap, TRACK_GAP, TRACK_GAP_MIN, TRACK_GAP_MAX),
     groupGap: clampNumber(source.groupGap, GROUP_GAP_DEFAULT, GROUP_GAP_MIN, GROUP_GAP_MAX),
     groupGapOverride: { ...DEFAULT_GROUP_GAP_OVERRIDE, ...(source.groupGapOverride || {}) },
-    trackGapOverride: { ...(source.trackGapOverride || {}) }
+    trackGapOverride: { ...(source.trackGapOverride || {}) },
+    trackHeightOverride: { ...(source.trackHeightOverride || {}) }
   };
 
   Object.keys(normalized.trackGapOverride).forEach((key) => {
@@ -1521,6 +1524,11 @@ function normalizeLayoutState(layout) {
     normalized.groupGapOverride[key] = Number.isFinite(value)
       ? clampNumber(value, normalized.groupGap, GROUP_GAP_MIN, GROUP_GAP_MAX)
       : null;
+  });
+
+  Object.keys(normalized.trackHeightOverride).forEach((key) => {
+    const value = normalized.trackHeightOverride[key];
+    normalized.trackHeightOverride[key] = Number.isFinite(value) ? Math.max(0, Math.round(value)) : null;
   });
 
   return normalized;
@@ -2009,6 +2017,47 @@ function computeSingleDateTrackHeight(trackMinHeight, layout = {}) {
   const spacing = (levelHeights.length - 1) * SINGLE_DATE_CARD_GAP;
   const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
   return Math.max(trackMinHeight, blockHeight + spacing + 48);
+}
+
+function renderTrackResizeHandles(tracks = []) {
+  if (!Array.isArray(tracks) || !tracks.length) {
+    return;
+  }
+  const handleRadius = 6;
+  const handleX = LEFT_MARGIN - 18;
+
+  tracks.forEach((track) => {
+    const y = track.top + track.height;
+    const handle = createSvgElement('circle', {
+      cx: handleX,
+      cy: y,
+      r: handleRadius,
+      class: 'track-resize-handle'
+    });
+    timelineSvg.appendChild(handle);
+
+    const updatePreview = (nextHeight) => {
+      if (!state.layout) {
+        state.layout = normalizeLayoutState({});
+      }
+      state.layout.trackHeightOverride = {
+        ...(state.layout.trackHeightOverride || {}),
+        [track.key]: Math.round(nextHeight)
+      };
+      state.layout = normalizeLayoutState(state.layout);
+      renderTimeline();
+    };
+
+    registerResizable(handle, {
+      axis: 'y',
+      getHeight: () => track.height,
+      getMinHeight: () => track.baseHeight,
+      getMaxHeight: () => track.baseHeight + 600,
+      onPreview: ({ height }) => updatePreview(height),
+      onCancel: ({ height }) => updatePreview(height),
+      onCommit: ({ height }) => applyTrackHeightOverride(track.key, height, track.baseHeight)
+    });
+  });
 }
 
 const LAB_TEST_TYPES = ['Микроскопия', 'МГМ', 'Посев на ППС', 'Посев на ЖПС'];
@@ -7161,20 +7210,25 @@ function getTrackLayout(metricsByKey, visibleKeys, dates) {
   keys.forEach((key) => {
     const track = TRACK_DEFINITIONS.find((definition) => definition.key === key);
     if (!track) return;
-    let height = track.minHeight;
+    let baseHeight = track.minHeight;
     if (track.key === 'therapy') {
-      height = computeTherapyTrackHeight(metricsByKey?.therapy, dates);
+      baseHeight = computeTherapyTrackHeight(metricsByKey?.therapy, dates);
     } else if (track.key === 'support') {
-      height = computeSupportTrackHeight(metricsByKey?.support, dates);
+      baseHeight = computeSupportTrackHeight(metricsByKey?.support, dates);
     } else if (track.key === 'endoscopy') {
-      height = computeEndoscopyTrackHeight(metricsByKey?.endoscopy, dates);
+      baseHeight = computeEndoscopyTrackHeight(metricsByKey?.endoscopy, dates);
     } else if (track.key === 'neuro') {
-      height = computeSingleDateTrackHeight(track.minHeight, metricsByKey?.neuro?.layout);
+      baseHeight = computeSingleDateTrackHeight(track.minHeight, metricsByKey?.neuro?.layout);
     } else if (track.key === 'lab') {
-      height = computeSingleDateTrackHeight(track.minHeight, metricsByKey?.lab?.layout);
+      baseHeight = computeSingleDateTrackHeight(track.minHeight, metricsByKey?.lab?.layout);
     } else if (track.key === 'event') {
-      height = computeSingleDateTrackHeight(track.minHeight, metricsByKey?.event?.layout);
+      baseHeight = computeSingleDateTrackHeight(track.minHeight, metricsByKey?.event?.layout);
     }
+    const heightOverride = layoutConfig.trackHeightOverride?.[key];
+    const height = Math.max(
+      baseHeight,
+      Number.isFinite(heightOverride) && heightOverride > 0 ? heightOverride : baseHeight
+    );
     const groupId = TRACK_GROUP_BY_KEY[key] || key;
     if (previousGroup && groupId !== previousGroup) {
       const groupGapOverride = layoutConfig.groupGapOverride?.[groupId];
@@ -7184,7 +7238,7 @@ function getTrackLayout(metricsByKey, visibleKeys, dates) {
           : layoutConfig.groupGap;
       currentTop += groupGap;
     }
-    const layout = { ...track, height, top: currentTop };
+    const layout = { ...track, height, baseHeight, top: currentTop };
     layouts.push(layout);
     const gapOverride = layoutConfig.trackGapOverride?.[key];
     const trackGap =
@@ -8337,6 +8391,39 @@ function applyCardSizeOverride(item, nextWidth, nextHeight, baseWidth, baseHeigh
   return changed;
 }
 
+function applyTrackHeightOverride(trackKey, nextHeight, minHeight) {
+  if (!trackKey || !state.layout) {
+    return false;
+  }
+  const normalized = Math.round(Number(nextHeight));
+  if (!Number.isFinite(normalized) || normalized <= 0) {
+    return false;
+  }
+  const baseHeight = Math.max(Math.round(Number(minHeight) || 0), 0);
+  const current = Number(state.layout.trackHeightOverride?.[trackKey]) || 0;
+  const shouldRemove = normalized <= baseHeight + 1;
+
+  if (shouldRemove && !current) {
+    return false;
+  }
+  if (!shouldRemove && current === normalized) {
+    return false;
+  }
+
+  if (!state.layout.trackHeightOverride) {
+    state.layout.trackHeightOverride = {};
+  }
+  if (shouldRemove) {
+    delete state.layout.trackHeightOverride[trackKey];
+  } else {
+    state.layout.trackHeightOverride[trackKey] = normalized;
+  }
+  state.layout = normalizeLayoutState(state.layout);
+  syncStepXFromLayout();
+  renderTimeline();
+  return true;
+}
+
 function attachDetails(
   element,
   detail,
@@ -8642,6 +8729,8 @@ function renderTimeline() {
     class: 'axis-line'
   });
   timelineSvg.appendChild(axisLine);
+
+  renderTrackResizeHandles(tracks);
 
   renderTemperature(tracks.find((track) => track.key === 'temperature'), dates, chartWidth);
   renderTherapy(tracks.find((track) => track.key === 'therapy'), dates, chartWidth, therapyMetrics);
