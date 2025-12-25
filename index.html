@@ -185,6 +185,24 @@
           </div>
         </fieldset>
         <fieldset>
+          <legend>Компоновка</legend>
+          <label class="settings-range">
+            <span>Плотность по X</span>
+            <input type="range" min="12" max="80" step="1" data-layout-step-x />
+            <span data-layout-step-x-value></span>
+          </label>
+          <label class="settings-range">
+            <span>Зазор между треками</span>
+            <input type="range" min="0" max="80" step="1" data-layout-track-gap />
+            <span data-layout-track-gap-value></span>
+          </label>
+          <label class="settings-range">
+            <span>Зазор между группами</span>
+            <input type="range" min="0" max="120" step="1" data-layout-group-gap />
+            <span data-layout-group-gap-value></span>
+          </label>
+        </fieldset>
+        <fieldset>
           <legend>Цветовая тема</legend>
           <label><input type="radio" name="theme" value="light" /> Светлая</label>
           <label><input type="radio" name="theme" value="dark" /> Тёмная</label>

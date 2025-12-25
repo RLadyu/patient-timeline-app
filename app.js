@@ -303,7 +303,22 @@ const state = {
       comment: 'Клиническая стабилизация, переход на амбулаторный этап лечения'
     }
   ],
-  timelineDates: []
+  timelineDates: [],
+  layout: {
+    stepX: 50,
+    trackGap: 40,
+    groupGap: 24,
+    groupGapOverride: {
+      clinical: null,
+      therapy: null,
+      endoscopy: null,
+      surgery: null,
+      radiology: null,
+      diagnostics: null,
+      events: null
+    },
+    trackGapOverride: {}
+  }
 };
 
 const MS_IN_DAY = 24 * 60 * 60 * 1000;
@@ -1367,6 +1382,16 @@ function parseWidthOverride(value) {
   return Math.round(numeric);
 }
 
+function clampNumber(value, fallback, min, max) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) {
+    return fallback;
+  }
+  const minValue = Number.isFinite(min) ? min : num;
+  const maxValue = Number.isFinite(max) ? max : num;
+  return Math.min(Math.max(num, minValue), maxValue);
+}
+
 function parseOffsetValue(value) {
   if (value === null || value === undefined || value === '') {
     return 0;
@@ -1473,6 +1498,43 @@ function getEndoscopyWidthOverride(item) {
     return null;
   }
   return parseWidthOverride(item.chartWidthOverride);
+}
+
+function normalizeLayoutState(layout) {
+  const source = layout && typeof layout === 'object' ? layout : {};
+  const normalized = {
+    stepX: clampStepX(Number(source.stepX) || STEP_X_DEFAULT),
+    trackGap: clampNumber(source.trackGap, TRACK_GAP, TRACK_GAP_MIN, TRACK_GAP_MAX),
+    groupGap: clampNumber(source.groupGap, GROUP_GAP_DEFAULT, GROUP_GAP_MIN, GROUP_GAP_MAX),
+    groupGapOverride: { ...DEFAULT_GROUP_GAP_OVERRIDE, ...(source.groupGapOverride || {}) },
+    trackGapOverride: { ...(source.trackGapOverride || {}) }
+  };
+
+  Object.keys(normalized.trackGapOverride).forEach((key) => {
+    const value = normalized.trackGapOverride[key];
+    normalized.trackGapOverride[key] = Number.isFinite(value)
+      ? clampNumber(value, normalized.trackGap, TRACK_GAP_MIN, TRACK_GAP_MAX)
+      : null;
+  });
+
+  Object.keys(normalized.groupGapOverride).forEach((key) => {
+    const value = normalized.groupGapOverride[key];
+    normalized.groupGapOverride[key] = Number.isFinite(value)
+      ? clampNumber(value, normalized.groupGap, GROUP_GAP_MIN, GROUP_GAP_MAX)
+      : null;
+  });
+
+  return normalized;
+}
+
+function getLayoutConfig() {
+  return normalizeLayoutState(state.layout || {});
+}
+
+function syncStepXFromLayout() {
+  const layout = getLayoutConfig();
+  currentStepX = clampStepX(layout.stepX);
+  state.layout = layout;
 }
 
 function clampCardWidth(value, minWidth, maxWidth) {
@@ -3179,6 +3241,19 @@ const TRACK_DEFINITIONS = [
   { key: 'event', label: 'События/диагнозы', minHeight: 120 }
 ];
 
+const TRACK_GROUP_BY_KEY = {
+  temperature: 'clinical',
+  therapy: 'therapy',
+  support: 'therapy',
+  neuro: 'therapy',
+  liver: 'therapy',
+  endoscopy: 'endoscopy',
+  surgery: 'surgery',
+  radiology: 'radiology',
+  lab: 'diagnostics',
+  event: 'events'
+};
+
 const PARAMETER_GROUPS = [
   {
     label: 'Клинические показатели',
@@ -3278,9 +3353,9 @@ function getParametersForDirection(directionKey) {
   return PARAMETER_CATALOG[directionKey] || [];
 }
 
-const STEP_X_DEFAULT = 150;
-const STEP_X_MIN = 80;
-const STEP_X_MAX = 260;
+const STEP_X_DEFAULT = 50;
+const STEP_X_MIN = 12;
+const STEP_X_MAX = 80;
 let currentStepX = STEP_X_DEFAULT;
 const LEFT_MARGIN = 160;
 const RIGHT_MARGIN = 140;
@@ -3291,6 +3366,20 @@ const BASE_LEGEND_TOP_OFFSET = 45;
 const BASE_LEGEND_ROW_HEIGHT = 28;
 const BASE_LEGEND_EXTRA_GAP = 20;
 const TRACK_GAP = 40;
+const TRACK_GAP_MIN = 0;
+const TRACK_GAP_MAX = 80;
+const GROUP_GAP_DEFAULT = 24;
+const GROUP_GAP_MIN = 0;
+const GROUP_GAP_MAX = 120;
+const DEFAULT_GROUP_GAP_OVERRIDE = {
+  clinical: null,
+  therapy: null,
+  endoscopy: null,
+  surgery: null,
+  radiology: null,
+  diagnostics: null,
+  events: null
+};
 const MIN_WIDTH = 1200;
 const DRAG_THRESHOLD = 4;
 const RESIZE_THRESHOLD = 3;
@@ -3371,6 +3460,24 @@ const fontIncreaseButton = settingsForm
   : null;
 const fontSizeValueLabel = settingsForm
   ? settingsForm.querySelector('[data-font-size-value]')
+  : null;
+const layoutStepXInput = settingsForm
+  ? settingsForm.querySelector('[data-layout-step-x]')
+  : null;
+const layoutStepXValue = settingsForm
+  ? settingsForm.querySelector('[data-layout-step-x-value]')
+  : null;
+const layoutTrackGapInput = settingsForm
+  ? settingsForm.querySelector('[data-layout-track-gap]')
+  : null;
+const layoutTrackGapValue = settingsForm
+  ? settingsForm.querySelector('[data-layout-track-gap-value]')
+  : null;
+const layoutGroupGapInput = settingsForm
+  ? settingsForm.querySelector('[data-layout-group-gap]')
+  : null;
+const layoutGroupGapValue = settingsForm
+  ? settingsForm.querySelector('[data-layout-group-gap-value]')
   : null;
 const parameterVisibilityContainer = document.querySelector('[data-visibility-container]');
 const parameterVisibilityTrigger = parameterVisibilityContainer
@@ -3679,6 +3786,54 @@ function updateFontSizeDisplay() {
   fontSizeValueLabel.textContent = `${size} px`;
 }
 
+function updateLayoutSettingsDisplay() {
+  const layout = getLayoutConfig();
+  if (layoutStepXInput) {
+    layoutStepXInput.value = String(layout.stepX);
+  }
+  if (layoutStepXValue) {
+    layoutStepXValue.textContent = `${Math.round(layout.stepX)} px`;
+  }
+  if (layoutTrackGapInput) {
+    layoutTrackGapInput.value = String(layout.trackGap);
+  }
+  if (layoutTrackGapValue) {
+    layoutTrackGapValue.textContent = `${Math.round(layout.trackGap)} px`;
+  }
+  if (layoutGroupGapInput) {
+    layoutGroupGapInput.value = String(layout.groupGap);
+  }
+  if (layoutGroupGapValue) {
+    layoutGroupGapValue.textContent = `${Math.round(layout.groupGap)} px`;
+  }
+}
+
+function applyLayoutSettings() {
+  state.layout = normalizeLayoutState(state.layout || {});
+  syncStepXFromLayout();
+  updateZoomButtons();
+  updateLayoutSettingsDisplay();
+  renderTimeline();
+}
+
+function handleLayoutControlInput() {
+  if (!state.layout) {
+    state.layout = normalizeLayoutState({});
+  }
+  const layout = { ...(state.layout || {}) };
+  if (layoutStepXInput) {
+    layout.stepX = clampStepX(Number(layoutStepXInput.value) || STEP_X_DEFAULT);
+  }
+  if (layoutTrackGapInput) {
+    layout.trackGap = clampNumber(layoutTrackGapInput.value, TRACK_GAP, TRACK_GAP_MIN, TRACK_GAP_MAX);
+  }
+  if (layoutGroupGapInput) {
+    layout.groupGap = clampNumber(layoutGroupGapInput.value, GROUP_GAP_DEFAULT, GROUP_GAP_MIN, GROUP_GAP_MAX);
+  }
+  state.layout = normalizeLayoutState(layout);
+  applyLayoutSettings();
+}
+
 function applyDisplayPreferences() {
   const fontSize = clampFontSizePx(displayPreferences.fontSizePx || 16);
   displayPreferences.fontSizePx = fontSize;
@@ -3705,6 +3860,7 @@ function syncSettingsForm() {
     input.checked = input.value === theme;
   });
   updateFontSizeDisplay();
+  updateLayoutSettingsDisplay();
 }
 
 function openSettingsModal() {
@@ -4649,7 +4805,8 @@ function cloneStateData(source = state) {
       : [],
     surgery: Array.isArray(source.surgery) ? source.surgery.map((item) => ({ ...item })) : [],
     radiology: Array.isArray(source.radiology) ? source.radiology.map((item) => ({ ...item })) : [],
-    events: Array.isArray(source.events) ? source.events.map((item) => ({ ...item })) : []
+    events: Array.isArray(source.events) ? source.events.map((item) => ({ ...item })) : [],
+    layout: source.layout ? normalizeLayoutState(source.layout) : normalizeLayoutState({})
   };
 }
 
@@ -4792,6 +4949,9 @@ function restoreStateSnapshot(snapshot) {
   state.surgery = cloned.surgery;
   state.radiology = cloned.radiology;
   state.events = cloned.events;
+  state.layout = normalizeLayoutState(cloned.layout || state.layout || {});
+  syncStepXFromLayout();
+  updateLayoutSettingsDisplay();
   state.timelineDates = [];
   therapyDraft = createEmptyTherapyDraft();
 
@@ -5079,22 +5239,25 @@ function triggerDownload(url, filename) {
 }
 
 function updateZoomButtons() {
+  const stepX = getStepX();
   if (zoomOutButton) {
-    zoomOutButton.disabled = currentStepX <= STEP_X_MIN + 0.1;
+    zoomOutButton.disabled = stepX <= STEP_X_MIN + 0.1;
   }
   if (zoomInButton) {
-    zoomInButton.disabled = currentStepX >= STEP_X_MAX - 0.1;
+    zoomInButton.disabled = stepX >= STEP_X_MAX - 0.1;
   }
 }
 
 function adjustZoom(delta) {
-  const nextStep = clampStepX(currentStepX + delta);
-  if (nextStep === currentStepX) {
+  const nextStep = clampStepX(getStepX() + delta);
+  if (nextStep === getStepX()) {
     updateZoomButtons();
     return;
   }
   currentStepX = nextStep;
+  state.layout = normalizeLayoutState({ ...(state.layout || {}), stepX: nextStep });
   renderTimeline();
+  updateLayoutSettingsDisplay();
 }
 
 function handleResetGraph() {
@@ -5104,11 +5267,13 @@ function handleResetGraph() {
     endPan();
   }
   currentStepX = STEP_X_DEFAULT;
+  state.layout = normalizeLayoutState({ ...(state.layout || {}), stepX: STEP_X_DEFAULT });
   if (chartScrollContainer) {
     chartScrollContainer.scrollLeft = 0;
     chartScrollContainer.scrollTop = 0;
   }
   updateZoomButtons();
+  updateLayoutSettingsDisplay();
   renderTimeline();
 }
 
@@ -6622,7 +6787,8 @@ function updateTimelineDates() {
 }
 
 function getStepX() {
-  return currentStepX;
+  const layoutStep = state.layout && Number.isFinite(state.layout.stepX) ? state.layout.stepX : currentStepX;
+  return clampStepX(layoutStep);
 }
 
 function clampStepX(value) {
@@ -6910,6 +7076,8 @@ function getTrackLayout(metricsByKey, visibleKeys, dates) {
   const keys = Array.isArray(visibleKeys) && visibleKeys.length ? visibleKeys : getVisibleTrackKeys();
   let currentTop = TOP_MARGIN;
   const layouts = [];
+  const layoutConfig = getLayoutConfig();
+  let previousGroup = null;
 
   keys.forEach((key) => {
     const track = TRACK_DEFINITIONS.find((definition) => definition.key === key);
@@ -6922,9 +7090,22 @@ function getTrackLayout(metricsByKey, visibleKeys, dates) {
     } else if (track.key === 'endoscopy') {
       height = computeEndoscopyTrackHeight(metricsByKey?.endoscopy, dates);
     }
+    const groupId = TRACK_GROUP_BY_KEY[key] || key;
+    if (previousGroup && groupId !== previousGroup) {
+      const groupGapOverride = layoutConfig.groupGapOverride?.[groupId];
+      const groupGap =
+        Number.isFinite(groupGapOverride) && groupGapOverride !== null
+          ? groupGapOverride
+          : layoutConfig.groupGap;
+      currentTop += groupGap;
+    }
     const layout = { ...track, height, top: currentTop };
     layouts.push(layout);
-    currentTop += height + TRACK_GAP;
+    const gapOverride = layoutConfig.trackGapOverride?.[key];
+    const trackGap =
+      Number.isFinite(gapOverride) && gapOverride !== null ? gapOverride : layoutConfig.trackGap;
+    currentTop += height + trackGap;
+    previousGroup = groupId;
   });
 
   return layouts;
@@ -10874,6 +11055,7 @@ function buildExportMetadataRow() {
     version: DATA_EXPORT_VERSION,
     trackVisibility: Array.from(trackVisibility.entries()),
     parameterType: parameterSelect ? parameterSelect.value : '',
+    layout: state.layout ? normalizeLayoutState(state.layout) : null,
     generatedAt: new Date().toISOString()
   };
 
@@ -11953,6 +12135,7 @@ function importDataFromCsv(text) {
 
   let importedVisibility = null;
   let importedParameterType = '';
+  let importedLayout = null;
 
   for (let i = metadataEntries.length - 1; i >= 0; i -= 1) {
     const entry = metadataEntries[i];
@@ -11968,7 +12151,10 @@ function importDataFromCsv(text) {
       if (meta && typeof meta.parameterType === 'string') {
         importedParameterType = meta.parameterType;
       }
-      if (importedVisibility && importedParameterType) {
+      if (meta && meta.layout) {
+        importedLayout = meta.layout;
+      }
+      if (importedVisibility && importedParameterType && importedLayout) {
         break;
       }
     } catch (error) {
@@ -11980,6 +12166,7 @@ function importDataFromCsv(text) {
     state: nextState,
     trackVisibility: importedVisibility,
     parameterType: importedParameterType,
+    layout: importedLayout,
     skippedRows
   };
 }
@@ -12001,6 +12188,10 @@ function applyImportedState(nextState, options = {}) {
   state.surgery = Array.isArray(nextState.surgery) ? nextState.surgery : [];
   state.radiology = Array.isArray(nextState.radiology) ? nextState.radiology : [];
   state.events = Array.isArray(nextState.events) ? nextState.events : [];
+  const importedLayout = options.layout || nextState.layout || state.layout || {};
+  state.layout = normalizeLayoutState(importedLayout);
+  syncStepXFromLayout();
+  updateLayoutSettingsDisplay();
   state.timelineDates = [];
   therapyDraft = createEmptyTherapyDraft();
 
@@ -12085,6 +12276,7 @@ function handleImportFileChange(event) {
       applyImportedState(importResult.state, {
         trackVisibility: importResult.trackVisibility,
         parameterType: importResult.parameterType,
+        layout: importResult.layout,
         skippedRows: importResult.skippedRows
       });
       updateUndoButtonState();
@@ -12776,6 +12968,16 @@ if (fontIncreaseButton) {
   fontIncreaseButton.addEventListener('click', () => adjustFontSize(1));
 }
 
+if (layoutStepXInput) {
+  layoutStepXInput.addEventListener('input', handleLayoutControlInput);
+}
+if (layoutTrackGapInput) {
+  layoutTrackGapInput.addEventListener('input', handleLayoutControlInput);
+}
+if (layoutGroupGapInput) {
+  layoutGroupGapInput.addEventListener('input', handleLayoutControlInput);
+}
+
 if (settingsForm) {
   settingsForm.addEventListener('change', handleSettingsFormChange);
 }
@@ -12914,6 +13116,8 @@ populateParameterSelect(directionSelect ? directionSelect.value : DIRECTIONS[0]?
 syncIdCounterWithState(state);
 updateUndoButtonState();
 initializeTrackToggles();
+syncStepXFromLayout();
+updateLayoutSettingsDisplay();
 applyDisplayPreferences();
 const initialParam = ensureActiveParameterSelection();
 syncDirectionForParameter(initialParam);
