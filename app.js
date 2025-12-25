@@ -3498,6 +3498,7 @@ const TRACK_GAP_MAX = 80;
 const GROUP_GAP_DEFAULT = 24;
 const GROUP_GAP_MIN = 0;
 const GROUP_GAP_MAX = 120;
+const TRACK_HEIGHT_MIN = 60;
 const DEFAULT_GROUP_GAP_OVERRIDE = {
   clinical: null,
   therapy: null,
@@ -11479,8 +11480,10 @@ function buildExportRows() {
       chartOffsetY: '',
       chartFontScale: item.chartFontScale || '',
       iconKey: item.iconKey || '',
-      iconOffsetX: item.iconOffset ? item.iconOffset.x || '' : '',
-      iconOffsetY: item.iconOffset ? item.iconOffset.y || '' : '',
+      iconOffsetX:
+        item.iconOffset && Number.isFinite(item.iconOffset.x) ? item.iconOffset.x : '',
+      iconOffsetY:
+        item.iconOffset && Number.isFinite(item.iconOffset.y) ? item.iconOffset.y : '',
       flagged: Boolean(item.isFlagged),
       enabled: true
     });
