@@ -354,7 +354,7 @@ const COLORS = {
   therapy: '#16a34a',
   support: '#0f172a',
   endoscopy: '#1d4ed8',
-  surgery: '#a855f7',
+  surgery: '#f59e0b',
   radiology: '#0284c7',
   neuro: '#8b5cf6',
   liver: '#f97316',
@@ -1606,6 +1606,95 @@ function clampCardY(desiredY, track, height) {
     return minY;
   }
   return Math.min(Math.max(desiredY, minY), maxY);
+}
+
+function renderCardWithText({
+  layer,
+  track,
+  item,
+  centerX,
+  desiredY,
+  chartWidth,
+  minW,
+  maxW,
+  minH,
+  maxH,
+  paddingX,
+  paddingTop,
+  paddingBottom,
+  fontScale,
+  text,
+  classRect,
+  classText
+}) {
+  if (!layer || !item) {
+    return null;
+  }
+  const widthOverride = parseWidthOverride(item.chartWidthOverride);
+  const heightOverride = parseHeightOverride(item.chartHeightOverride);
+  const resolvedMaxWidth = Math.max(minW, maxW);
+  const baseMaxChars = estimateMaxCharsForWidth(minW - paddingX * 2, fontScale);
+  const baseLines = wrapTextToLines(text, baseMaxChars, Infinity);
+  const maxLineLength = baseLines.reduce((max, line) => Math.max(max, line.length), 0);
+  const baseWidth = Math.min(
+    Math.max(minW, maxLineLength * SVG_CHAR_WIDTH * fontScale + paddingX * 2),
+    resolvedMaxWidth
+  );
+  const cardWidth = clampCardWidth(widthOverride ?? baseWidth, minW, resolvedMaxWidth);
+  const cardX = Math.min(
+    Math.max(centerX - cardWidth / 2, LEFT_MARGIN),
+    chartWidth - RIGHT_MARGIN - cardWidth
+  );
+  const availableW = Math.max(0, cardWidth - paddingX * 2);
+  const maxChars = estimateMaxCharsForWidth(availableW, fontScale);
+  const lines = wrapTextToLines(text, maxChars, Infinity);
+  const lineHeight = SINGLE_DATE_CARD_LINE_HEIGHT * fontScale;
+  const naturalHeight = paddingTop + paddingBottom + lines.length * lineHeight;
+  const minHeight = Number.isFinite(minH) ? minH : SINGLE_DATE_CARD_MIN_HEIGHT;
+  const desiredHeight = Math.max(naturalHeight, heightOverride || 0, minHeight);
+  const maxHeight = Number.isFinite(maxH) ? maxH : desiredHeight;
+  const cardHeight = clampNumber(desiredHeight, minHeight, maxHeight);
+  const cardY = clampCardY(desiredY, track, cardHeight);
+
+  const rect = createSvgElement('rect', {
+    x: cardX,
+    y: cardY,
+    width: cardWidth,
+    height: cardHeight,
+    rx: 10,
+    ry: 10,
+    class: classRect
+  });
+  layer.appendChild(rect);
+
+  const textEl = createSvgElement('text', {
+    x: cardX + paddingX,
+    y: cardY + paddingTop,
+    class: classText,
+    'text-anchor': 'start',
+    'dominant-baseline': 'hanging'
+  });
+  textEl.style.fontSize = `${12 * fontScale}px`;
+  lines.forEach((line, index) => {
+    const tspan = createSvgElement('tspan', {
+      x: cardX + paddingX,
+      y: cardY + paddingTop + index * lineHeight
+    });
+    tspan.textContent = line;
+    textEl.appendChild(tspan);
+  });
+  layer.appendChild(textEl);
+
+  return {
+    rect,
+    textEl,
+    cardX,
+    cardY,
+    cardWidth,
+    cardHeight,
+    lineHeight,
+    lines
+  };
 }
 
 function buildSingleDateCardLayout(text, fontScale, options = {}) {
@@ -9942,17 +10031,30 @@ function renderSurgery(track, dates, chartWidth, metrics) {
     const fontScale = getEffectiveChartFontScale(item);
     const summary = buildSurgerySummary(item);
     const labelText = summary.label || getSurgeryDisplayLabel(item);
-    const measurement = layout.measurements?.get(item.id);
-    const baseLayout = measurement || buildSingleDateCardLayout(labelText, fontScale, {});
-    const maxWidth = Math.max(
-      baseLayout.baseWidth,
-      Math.min(SINGLE_DATE_CARD_MAX_WIDTH, chartWidth - LEFT_MARGIN - RIGHT_MARGIN)
-    );
-    const cardWidth = clampCardWidth(baseLayout.width, baseLayout.baseWidth, maxWidth);
-    const centered = computeCenteredCardX(x, cardWidth, chartWidth);
     const level = layout.levelAssignments?.get(item.id) ?? item.__level ?? 0;
-    const cardHeight = Math.max(baseLayout.height, SINGLE_DATE_CARD_MIN_HEIGHT);
-    const cardY = clampCardY(levelOffsets[level] ?? startY, renderTrack, cardHeight);
+    const cardResult = renderCardWithText({
+      layer,
+      track: renderTrack,
+      item,
+      centerX: x,
+      desiredY: levelOffsets[level] ?? startY,
+      chartWidth,
+      minW: SINGLE_DATE_CARD_MIN_WIDTH,
+      maxW: SINGLE_DATE_CARD_MAX_WIDTH,
+      minH: SINGLE_DATE_CARD_MIN_HEIGHT,
+      maxH: Number.POSITIVE_INFINITY,
+      paddingX: SINGLE_DATE_CARD_PADDING_X * fontScale,
+      paddingTop: SINGLE_DATE_CARD_PADDING_Y * fontScale,
+      paddingBottom: SINGLE_DATE_CARD_PADDING_Y * fontScale,
+      fontScale,
+      text: labelText,
+      classRect: 'surgery-card',
+      classText: 'surgery-label'
+    });
+    if (!cardResult) {
+      return;
+    }
+    const { rect: card, textEl: label, cardY, cardHeight } = cardResult;
     const markerY = cardY + cardHeight + SINGLE_DATE_CARD_GAP;
     const marker = createSvgElement('circle', {
       cx: x,
@@ -9961,28 +10063,6 @@ function renderSurgery(track, dates, chartWidth, metrics) {
       class: 'surgery-marker'
     });
     layer.appendChild(marker);
-
-    const card = createSvgElement('rect', {
-      x: centered.x,
-      y: cardY,
-      width: cardWidth,
-      height: cardHeight,
-      rx: 10,
-      ry: 10,
-      class: 'surgery-card'
-    });
-    layer.appendChild(card);
-
-    const label = createSvgElement('text', {
-      x: centered.center,
-      y: cardY + baseLayout.paddingY,
-      class: 'surgery-label',
-      'text-anchor': 'middle',
-      'dominant-baseline': 'hanging'
-    });
-    label.style.fontSize = `${12 * fontScale}px`;
-    applyProvidedLines(label, baseLayout.lines, baseLayout.lineHeight);
-    layer.appendChild(label);
 
     const detail = {
       type: 'Хирургия',
@@ -10045,17 +10125,30 @@ function renderRadiology(track, dates, chartWidth, metrics) {
     const fontScale = getEffectiveChartFontScale(item);
     const summary = buildRadiologySummary(item);
     const labelText = summary.label || getRadiologyDisplayLabel(item);
-    const measurement = layout.measurements?.get(item.id);
-    const baseLayout = measurement || buildSingleDateCardLayout(labelText, fontScale, {});
-    const maxWidth = Math.max(
-      baseLayout.baseWidth,
-      Math.min(SINGLE_DATE_CARD_MAX_WIDTH, chartWidth - LEFT_MARGIN - RIGHT_MARGIN)
-    );
-    const cardWidth = clampCardWidth(baseLayout.width, baseLayout.baseWidth, maxWidth);
-    const centered = computeCenteredCardX(x, cardWidth, chartWidth);
     const level = layout.levelAssignments?.get(item.id) ?? item.__level ?? 0;
-    const cardHeight = Math.max(baseLayout.height, SINGLE_DATE_CARD_MIN_HEIGHT);
-    const cardY = clampCardY(levelOffsets[level] ?? startY, renderTrack, cardHeight);
+    const cardResult = renderCardWithText({
+      layer,
+      track: renderTrack,
+      item,
+      centerX: x,
+      desiredY: levelOffsets[level] ?? startY,
+      chartWidth,
+      minW: SINGLE_DATE_CARD_MIN_WIDTH,
+      maxW: SINGLE_DATE_CARD_MAX_WIDTH,
+      minH: SINGLE_DATE_CARD_MIN_HEIGHT,
+      maxH: Number.POSITIVE_INFINITY,
+      paddingX: SINGLE_DATE_CARD_PADDING_X * fontScale,
+      paddingTop: SINGLE_DATE_CARD_PADDING_Y * fontScale,
+      paddingBottom: SINGLE_DATE_CARD_PADDING_Y * fontScale,
+      fontScale,
+      text: labelText,
+      classRect: 'radiology-card',
+      classText: 'radiology-label'
+    });
+    if (!cardResult) {
+      return;
+    }
+    const { rect: card, textEl: label, cardY, cardHeight } = cardResult;
     const markerY = cardY + cardHeight + SINGLE_DATE_CARD_GAP;
     const marker = createSvgElement('rect', {
       x: x - 9,
@@ -10067,28 +10160,6 @@ function renderRadiology(track, dates, chartWidth, metrics) {
       class: 'radiology-marker'
     });
     layer.appendChild(marker);
-
-    const card = createSvgElement('rect', {
-      x: centered.x,
-      y: cardY,
-      width: cardWidth,
-      height: cardHeight,
-      rx: 10,
-      ry: 10,
-      class: 'radiology-card'
-    });
-    layer.appendChild(card);
-
-    const label = createSvgElement('text', {
-      x: centered.center,
-      y: cardY + baseLayout.paddingY,
-      class: 'radiology-label',
-      'text-anchor': 'middle',
-      'dominant-baseline': 'hanging'
-    });
-    label.style.fontSize = `${12 * fontScale}px`;
-    applyProvidedLines(label, baseLayout.lines, baseLayout.lineHeight);
-    layer.appendChild(label);
 
     const detail = {
       type: 'Рентгенология',
@@ -10149,17 +10220,30 @@ function renderNeuro(track, dates, chartWidth, metrics) {
   sorted.forEach((item) => {
     const x = getXPosition(item.date, dates);
     const fontScale = getEffectiveChartFontScale(item);
-    const measurement = layout.measurements?.get(item.id);
-    const baseLayout = measurement || buildSingleDateCardLayout(item.status, fontScale, {});
-    const maxWidth = Math.max(
-      baseLayout.baseWidth,
-      Math.min(SINGLE_DATE_CARD_MAX_WIDTH, chartWidth - LEFT_MARGIN - RIGHT_MARGIN)
-    );
-    const cardWidth = clampCardWidth(baseLayout.width, baseLayout.baseWidth, maxWidth);
-    const centered = computeCenteredCardX(x, cardWidth, chartWidth);
     const level = layout.levelAssignments?.get(item.id) ?? item.__level ?? 0;
-    const cardHeight = Math.max(baseLayout.height, SINGLE_DATE_CARD_MIN_HEIGHT);
-    const cardY = clampCardY(levelOffsets[level] ?? startY, renderTrack, cardHeight);
+    const cardResult = renderCardWithText({
+      layer,
+      track: renderTrack,
+      item,
+      centerX: x,
+      desiredY: levelOffsets[level] ?? startY,
+      chartWidth,
+      minW: SINGLE_DATE_CARD_MIN_WIDTH,
+      maxW: SINGLE_DATE_CARD_MAX_WIDTH,
+      minH: SINGLE_DATE_CARD_MIN_HEIGHT,
+      maxH: Number.POSITIVE_INFINITY,
+      paddingX: SINGLE_DATE_CARD_PADDING_X * fontScale,
+      paddingTop: SINGLE_DATE_CARD_PADDING_Y * fontScale,
+      paddingBottom: SINGLE_DATE_CARD_PADDING_Y * fontScale,
+      fontScale,
+      text: item.status || '',
+      classRect: 'neuro-card',
+      classText: 'neuro-label'
+    });
+    if (!cardResult) {
+      return;
+    }
+    const { rect: card, textEl: label, cardY, cardHeight } = cardResult;
     const markerY = cardY + cardHeight + SINGLE_DATE_CARD_GAP;
     const marker = createSvgElement('circle', {
       cx: x,
@@ -10168,28 +10252,6 @@ function renderNeuro(track, dates, chartWidth, metrics) {
       class: 'neuro-marker'
     });
     layer.appendChild(marker);
-
-    const card = createSvgElement('rect', {
-      x: centered.x,
-      y: cardY,
-      width: cardWidth,
-      height: cardHeight,
-      rx: 10,
-      ry: 10,
-      class: 'neuro-card'
-    });
-    layer.appendChild(card);
-
-    const label = createSvgElement('text', {
-      x: centered.center,
-      y: cardY + baseLayout.paddingY,
-      class: 'neuro-label',
-      'text-anchor': 'middle',
-      'dominant-baseline': 'hanging'
-    });
-    label.style.fontSize = `${12 * fontScale}px`;
-    applyProvidedLines(label, baseLayout.lines, baseLayout.lineHeight);
-    layer.appendChild(label);
 
     const editInfo = { type: 'neuro', id: item.id };
     const detailPayload = {
@@ -10229,66 +10291,6 @@ function renderNeuro(track, dates, chartWidth, metrics) {
         attachDetails(indicator, detailPayload, marker, item.id, editInfo);
       }
     }
-
-    const handleSize = RESIZE_HANDLE_SIZE;
-    const handle = createSvgElement('rect', {
-      x: centered.x + cardWidth - handleSize,
-      y: cardY + cardHeight - handleSize,
-      width: handleSize,
-      height: handleSize,
-      rx: 3,
-      ry: 3,
-      class: 'resize-handle neuro-resize-handle'
-    });
-    layer.appendChild(handle);
-
-    const updatePreview = (nextWidth, nextHeight) => {
-      const previewWidth = clampCardWidth(nextWidth, baseLayout.baseWidth, maxWidth);
-      const previewMaxChars = estimateMaxCharsForWidth(previewWidth - baseLayout.paddingX * 2, fontScale);
-      const previewLines = wrapTextToLines(item.status, previewMaxChars, Infinity);
-      const previewNaturalHeight = Math.max(
-        SINGLE_DATE_CARD_MIN_HEIGHT,
-        previewLines.length * baseLayout.lineHeight + baseLayout.paddingY * 2
-      );
-      const previewHeight = Math.max(nextHeight, previewNaturalHeight);
-      const previewCenter = computeCenteredCardX(x, previewWidth, chartWidth);
-
-      card.setAttribute('x', previewCenter.x);
-      card.setAttribute('width', previewWidth);
-      card.setAttribute('height', previewHeight);
-      label.setAttribute('x', previewCenter.center);
-      label.setAttribute('y', cardY + baseLayout.paddingY);
-      applyProvidedLines(label, previewLines, baseLayout.lineHeight);
-      handle.setAttribute('x', previewCenter.x + previewWidth - handleSize);
-      handle.setAttribute('y', cardY + previewHeight - handleSize);
-    };
-
-    registerResizable(handle, {
-      axis: 'xy',
-      centered: true,
-      getWidth: () => {
-        const current = Number(card.getAttribute('width'));
-        return Number.isFinite(current) && current > 0 ? current : layout.width;
-      },
-      getHeight: () => {
-        const current = Number(card.getAttribute('height'));
-        return Number.isFinite(current) && current > 0 ? current : cardHeight;
-      },
-      getMinWidth: () => baseLayout.baseWidth,
-      getMaxWidth: () => maxWidth,
-      getMinHeight: () => baseLayout.naturalHeight,
-      getMaxHeight: () => Math.max(baseLayout.naturalHeight, renderTrack.height - 12),
-      onPreview: ({ width, height }) => updatePreview(width, height),
-      onCancel: ({ width, height }) => updatePreview(width, height),
-      onCommit: ({ width, height }) =>
-        applyCardSizeOverride(
-          state.neuro.find((entry) => entry.id === item.id),
-          width,
-          height,
-          baseLayout.baseWidth,
-          baseLayout.naturalHeight
-        )
-    });
 
     registerDraggable([marker, card, label], {
       type: 'neuro',
@@ -10415,17 +10417,30 @@ function renderLabDiagnostics(track, dates, chartWidth, metrics) {
     const x = getXPosition(item.date, dates);
 
     const fontScale = getEffectiveChartFontScale(item);
-    const measurement = layout.measurements?.get(item.id);
-    const baseLayout = measurement || buildSingleDateCardLayout(item.testType, fontScale, {});
-    const maxWidth = Math.max(
-      baseLayout.baseWidth,
-      Math.min(SINGLE_DATE_CARD_MAX_WIDTH, chartWidth - LEFT_MARGIN - RIGHT_MARGIN)
-    );
-    const cardWidth = clampCardWidth(baseLayout.width, baseLayout.baseWidth, maxWidth);
-    const centered = computeCenteredCardX(x, cardWidth, chartWidth);
     const level = layout.levelAssignments?.get(item.id) ?? item.__level ?? 0;
-    const cardHeight = Math.max(baseLayout.height, SINGLE_DATE_CARD_MIN_HEIGHT);
-    const cardY = clampCardY(levelOffsets[level] ?? startY, renderTrack, cardHeight);
+    const cardResult = renderCardWithText({
+      layer,
+      track: renderTrack,
+      item,
+      centerX: x,
+      desiredY: levelOffsets[level] ?? startY,
+      chartWidth,
+      minW: SINGLE_DATE_CARD_MIN_WIDTH,
+      maxW: SINGLE_DATE_CARD_MAX_WIDTH,
+      minH: SINGLE_DATE_CARD_MIN_HEIGHT,
+      maxH: Number.POSITIVE_INFINITY,
+      paddingX: SINGLE_DATE_CARD_PADDING_X * fontScale,
+      paddingTop: SINGLE_DATE_CARD_PADDING_Y * fontScale,
+      paddingBottom: SINGLE_DATE_CARD_PADDING_Y * fontScale,
+      fontScale,
+      text: item.testType || '',
+      classRect: 'lab-card',
+      classText: 'lab-label'
+    });
+    if (!cardResult) {
+      return;
+    }
+    const { rect: card, textEl: label, cardY, cardHeight } = cardResult;
     const markerY = cardY + cardHeight + SINGLE_DATE_CARD_GAP;
     const marker = createSvgElement('rect', {
       x: x - 9,
@@ -10437,28 +10452,6 @@ function renderLabDiagnostics(track, dates, chartWidth, metrics) {
       class: 'lab-marker'
     });
     layer.appendChild(marker);
-
-    const card = createSvgElement('rect', {
-      x: centered.x,
-      y: cardY,
-      width: cardWidth,
-      height: cardHeight,
-      rx: 10,
-      ry: 10,
-      class: 'lab-card'
-    });
-    layer.appendChild(card);
-
-    const label = createSvgElement('text', {
-      x: centered.center,
-      y: cardY + baseLayout.paddingY,
-      class: 'lab-label',
-      'text-anchor': 'middle',
-      'dominant-baseline': 'hanging'
-    });
-    label.style.fontSize = `${12 * fontScale}px`;
-    applyProvidedLines(label, baseLayout.lines, baseLayout.lineHeight);
-    layer.appendChild(label);
 
     const detail = {
       type: 'Лабораторная диагностика',
@@ -10496,66 +10489,6 @@ function renderLabDiagnostics(track, dates, chartWidth, metrics) {
       }
     }
 
-    const handleSize = RESIZE_HANDLE_SIZE;
-    const handle = createSvgElement('rect', {
-      x: centered.x + cardWidth - handleSize,
-      y: cardY + cardHeight - handleSize,
-      width: handleSize,
-      height: handleSize,
-      rx: 3,
-      ry: 3,
-      class: 'resize-handle lab-resize-handle'
-    });
-    layer.appendChild(handle);
-
-    const updatePreview = (nextWidth, nextHeight) => {
-      const previewWidth = clampCardWidth(nextWidth, baseLayout.baseWidth, maxWidth);
-      const previewMaxChars = estimateMaxCharsForWidth(previewWidth - baseLayout.paddingX * 2, fontScale);
-      const previewLines = wrapTextToLines(item.testType, previewMaxChars, Infinity);
-      const previewNaturalHeight = Math.max(
-        SINGLE_DATE_CARD_MIN_HEIGHT,
-        previewLines.length * baseLayout.lineHeight + baseLayout.paddingY * 2
-      );
-      const previewHeight = Math.max(nextHeight, previewNaturalHeight);
-      const previewCenter = computeCenteredCardX(x, previewWidth, chartWidth);
-
-      card.setAttribute('x', previewCenter.x);
-      card.setAttribute('width', previewWidth);
-      card.setAttribute('height', previewHeight);
-      label.setAttribute('x', previewCenter.center);
-      label.setAttribute('y', cardY + baseLayout.paddingY);
-      applyProvidedLines(label, previewLines, baseLayout.lineHeight);
-      handle.setAttribute('x', previewCenter.x + previewWidth - handleSize);
-      handle.setAttribute('y', cardY + previewHeight - handleSize);
-    };
-
-    registerResizable(handle, {
-      axis: 'xy',
-      centered: true,
-      getWidth: () => {
-        const current = Number(card.getAttribute('width'));
-        return Number.isFinite(current) && current > 0 ? current : layout.width;
-      },
-      getHeight: () => {
-        const current = Number(card.getAttribute('height'));
-        return Number.isFinite(current) && current > 0 ? current : cardHeight;
-      },
-      getMinWidth: () => baseLayout.baseWidth,
-      getMaxWidth: () => maxWidth,
-      getMinHeight: () => baseLayout.naturalHeight,
-      getMaxHeight: () => Math.max(baseLayout.naturalHeight, renderTrack.height - 12),
-      onPreview: ({ width, height }) => updatePreview(width, height),
-      onCancel: ({ width, height }) => updatePreview(width, height),
-      onCommit: ({ width, height }) =>
-        applyCardSizeOverride(
-          state.labDiagnostics.find((entry) => entry.id === item.id),
-          width,
-          height,
-          baseLayout.baseWidth,
-          baseLayout.naturalHeight
-        )
-    });
-
     registerDraggable([marker, card, label], {
       type: 'lab',
       id: item.id,
@@ -10589,45 +10522,36 @@ function renderEvents(track, dates, chartWidth, metrics) {
     const x = getXPosition(item.date, dates);
     const itemFontScale = getEffectiveChartFontScale(item);
     const labelText = getEventDisplayLabel(item);
-    const measurement = layout.measurements?.get(item.id);
-    const baseLayout = measurement || buildSingleDateCardLayout(labelText, itemFontScale, {});
-    const maxWidth = Math.max(
-      baseLayout.baseWidth,
-      Math.min(SINGLE_DATE_CARD_MAX_WIDTH, chartWidth - LEFT_MARGIN - RIGHT_MARGIN)
-    );
-    const cardWidth = clampCardWidth(baseLayout.width, baseLayout.baseWidth, maxWidth);
-    const centered = computeCenteredCardX(x, cardWidth, chartWidth);
     const level = layout.levelAssignments?.get(item.id) ?? item.__level ?? 0;
-    const cardHeight = Math.max(baseLayout.height, SINGLE_DATE_CARD_MIN_HEIGHT);
-    const cardY = clampCardY(levelOffsets[level] ?? startY, renderTrack, cardHeight);
+    const cardResult = renderCardWithText({
+      layer,
+      track: renderTrack,
+      item,
+      centerX: x,
+      desiredY: levelOffsets[level] ?? startY,
+      chartWidth,
+      minW: SINGLE_DATE_CARD_MIN_WIDTH,
+      maxW: SINGLE_DATE_CARD_MAX_WIDTH,
+      minH: SINGLE_DATE_CARD_MIN_HEIGHT,
+      maxH: Number.POSITIVE_INFINITY,
+      paddingX: SINGLE_DATE_CARD_PADDING_X * itemFontScale,
+      paddingTop: SINGLE_DATE_CARD_PADDING_Y * itemFontScale,
+      paddingBottom: SINGLE_DATE_CARD_PADDING_Y * itemFontScale,
+      fontScale: itemFontScale,
+      text: labelText,
+      classRect: 'event-card',
+      classText: 'event-label'
+    });
+    if (!cardResult) {
+      return;
+    }
+    const { rect: card, textEl: label, cardY, cardHeight } = cardResult;
     const markerY = cardY + cardHeight + SINGLE_DATE_CARD_GAP;
     const path = createSvgElement('path', {
       d: `M ${x} ${markerY - markerSize} L ${x + markerSize} ${markerY} L ${x} ${markerY + markerSize} L ${x - markerSize} ${markerY} Z`,
       class: 'event-marker'
     });
     layer.appendChild(path);
-
-    const card = createSvgElement('rect', {
-      x: centered.x,
-      y: cardY,
-      width: cardWidth,
-      height: cardHeight,
-      rx: 10,
-      ry: 10,
-      class: 'event-card'
-    });
-    layer.appendChild(card);
-
-    const label = createSvgElement('text', {
-      x: centered.center,
-      y: cardY + baseLayout.paddingY,
-      class: 'event-label',
-      'text-anchor': 'middle',
-      'dominant-baseline': 'hanging'
-    });
-    label.style.fontSize = `${12 * itemFontScale}px`;
-    applyProvidedLines(label, baseLayout.lines, baseLayout.lineHeight);
-    layer.appendChild(label);
 
     const detailPayload = {
       type: 'Событие/диагноз',
@@ -10692,66 +10616,6 @@ function renderEvents(track, dates, chartWidth, metrics) {
         showIconActionMenu(icon, item.id);
       });
     }
-
-    const handleSize = RESIZE_HANDLE_SIZE;
-    const handle = createSvgElement('rect', {
-      x: centered.x + cardWidth - handleSize,
-      y: cardY + cardHeight - handleSize,
-      width: handleSize,
-      height: handleSize,
-      rx: 3,
-      ry: 3,
-      class: 'resize-handle event-resize-handle'
-    });
-    layer.appendChild(handle);
-
-    const updatePreview = (nextWidth, nextHeight) => {
-      const previewWidth = clampCardWidth(nextWidth, baseLayout.baseWidth, maxWidth);
-      const previewMaxChars = estimateMaxCharsForWidth(previewWidth - baseLayout.paddingX * 2, itemFontScale);
-      const previewLines = wrapTextToLines(labelText, previewMaxChars, Infinity);
-      const previewNaturalHeight = Math.max(
-        SINGLE_DATE_CARD_MIN_HEIGHT,
-        previewLines.length * baseLayout.lineHeight + baseLayout.paddingY * 2
-      );
-      const previewHeight = Math.max(nextHeight, previewNaturalHeight);
-      const previewCenter = computeCenteredCardX(x, previewWidth, chartWidth);
-
-      card.setAttribute('x', previewCenter.x);
-      card.setAttribute('width', previewWidth);
-      card.setAttribute('height', previewHeight);
-      label.setAttribute('x', previewCenter.center);
-      label.setAttribute('y', cardY + baseLayout.paddingY);
-      applyProvidedLines(label, previewLines, baseLayout.lineHeight);
-      handle.setAttribute('x', previewCenter.x + previewWidth - handleSize);
-      handle.setAttribute('y', cardY + previewHeight - handleSize);
-    };
-
-    registerResizable(handle, {
-      axis: 'xy',
-      centered: true,
-      getWidth: () => {
-        const current = Number(card.getAttribute('width'));
-        return Number.isFinite(current) && current > 0 ? current : layout.width;
-      },
-      getHeight: () => {
-        const current = Number(card.getAttribute('height'));
-        return Number.isFinite(current) && current > 0 ? current : cardHeight;
-      },
-      getMinWidth: () => baseLayout.baseWidth,
-      getMaxWidth: () => maxWidth,
-      getMinHeight: () => baseLayout.naturalHeight,
-      getMaxHeight: () => Math.max(baseLayout.naturalHeight, renderTrack.height - 12),
-      onPreview: ({ width, height }) => updatePreview(width, height),
-      onCancel: ({ width, height }) => updatePreview(width, height),
-      onCommit: ({ width, height }) =>
-        applyCardSizeOverride(
-          state.events.find((entry) => entry.id === item.id),
-          width,
-          height,
-          baseLayout.baseWidth,
-          baseLayout.naturalHeight
-        )
-    });
 
     registerDraggable([path, card, label], {
       type: 'event',
@@ -10983,10 +10847,13 @@ function renderLegend(chartWidth, chartHeight, bottomMargin, visibleTrackKeys = 
         break;
       }
       case 'surgery': {
-        legendGroup.appendChild(createSvgElement('circle', {
-          cx: cursorX + iconWidth / 2,
-          cy: cursorY,
-          r: 6,
+        legendGroup.appendChild(createSvgElement('rect', {
+          x: cursorX + 2,
+          y: cursorY - 8,
+          width: iconWidth - 4,
+          height: 16,
+          rx: 4,
+          ry: 4,
           fill: COLORS.surgery
         }));
         break;
