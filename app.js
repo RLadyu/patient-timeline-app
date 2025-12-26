@@ -10307,11 +10307,11 @@ function renderLiver(track, dates, chartWidth) {
   const sorted = stackIntervals(state.liver);
   if (!sorted.length) return;
 
-  const levelHeight = 24;
   const rowSpacing = 12;
+  const levelHeight = Math.max(SINGLE_DATE_CARD_MIN_HEIGHT, 24);
   const totalLevels = sorted.reduce((acc, item) => Math.max(acc, item.__level || 0), 0) + 1;
   const blockAreaHeight = totalLevels * levelHeight + (totalLevels - 1) * rowSpacing;
-  const startY = renderTrack.top + (renderTrack.height - blockAreaHeight) / 2;
+  const startY = renderTrack.top + Math.max((renderTrack.height - blockAreaHeight) / 2, 12);
 
   sorted.forEach((item) => {
     const level = item.__level || 0;
@@ -10320,28 +10320,31 @@ function renderLiver(track, dates, chartWidth) {
     const xEnd = item.endDate
       ? getXPosition(item.endDate, dates)
       : Math.max(xStart + 80, getLastCoordinate(dates, chartWidth));
-    const width = Math.max(40, xEnd - xStart);
-
-    const rect = createSvgElement('rect', {
-      x: xStart,
-      y,
-      width,
-      height: levelHeight,
-      class: 'liver-bar',
-      rx: 6,
-      ry: 6
-    });
-    layer.appendChild(rect);
-
+    const centerX = xStart + Math.max(40, xEnd - xStart) / 2;
     const fontScale = getEffectiveChartFontScale(item);
-    const label = createSvgElement('text', {
-      x: xStart + 6,
-      y: y - 6,
-      class: 'liver-label'
+    const cardResult = renderCardWithText({
+      layer,
+      track: renderTrack,
+      item,
+      centerX,
+      desiredY: y,
+      chartWidth,
+      minW: SINGLE_DATE_CARD_MIN_WIDTH,
+      maxW: SINGLE_DATE_CARD_MAX_WIDTH,
+      minH: SINGLE_DATE_CARD_MIN_HEIGHT,
+      maxH: Number.POSITIVE_INFINITY,
+      paddingX: SINGLE_DATE_CARD_PADDING_X * fontScale,
+      paddingTop: SINGLE_DATE_CARD_PADDING_Y * fontScale,
+      paddingBottom: SINGLE_DATE_CARD_PADDING_Y * fontScale,
+      fontScale,
+      text: item.status || '',
+      classRect: 'liver-bar',
+      classText: 'liver-label'
     });
-    label.textContent = item.status;
-    label.style.fontSize = `${12 * fontScale}px`;
-    layer.appendChild(label);
+    if (!cardResult) {
+      return;
+    }
+    const { rect, textEl: label } = cardResult;
 
     const comment = item.endDate
       ? `Период: ${formatDisplayDate(item.startDate)} – ${formatDisplayDate(item.endDate)}`
