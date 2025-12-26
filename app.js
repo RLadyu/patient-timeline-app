@@ -8532,14 +8532,7 @@ function getTrackContentScale(track) {
 }
 
 function getTrackContentTrack(track) {
-  if (!track) {
-    return null;
-  }
-  const scale = getTrackContentScale(track);
-  if (scale >= 1) {
-    return track;
-  }
-  return { ...track, height: track.baseHeight };
+  return track || null;
 }
 
 function getTrackContentLayer(track) {
@@ -8550,19 +8543,54 @@ function getTrackContentLayer(track) {
     return timelineSvg;
   }
   if (track.contentLayer) {
+    ensureTrackClipPath(track);
     return track.contentLayer;
   }
   const group = createSvgElement('g', { 'data-track-layer': track.key });
-  const scale = getTrackContentScale(track);
-  if (scale !== 1) {
-    group.setAttribute(
-      'transform',
-      `translate(0 ${track.top}) scale(1 ${scale}) translate(0 ${-track.top})`
-    );
-  }
+  group.setAttribute('clip-path', `url(#clip-${track.key})`);
+  ensureTrackClipPath(track);
   timelineSvg.appendChild(group);
   track.contentLayer = group;
   return group;
+}
+
+function ensureTrackClipDefs(svg) {
+  if (!svg) {
+    return null;
+  }
+  let defs = svg.querySelector('defs');
+  if (!defs) {
+    defs = createSvgElement('defs');
+    svg.insertBefore(defs, svg.firstChild);
+  }
+  return defs;
+}
+
+function ensureTrackClipPath(track) {
+  if (!timelineSvg || !track) {
+    return;
+  }
+  const defs = ensureTrackClipDefs(timelineSvg);
+  if (!defs) {
+    return;
+  }
+  const clipId = `clip-${track.key}`;
+  let clipPath = defs.querySelector(`#${clipId}`);
+  if (!clipPath) {
+    clipPath = createSvgElement('clipPath', { id: clipId });
+    defs.appendChild(clipPath);
+  }
+  const rectId = `clip-rect-${track.key}`;
+  let rect = clipPath.querySelector(`#${rectId}`);
+  if (!rect) {
+    rect = createSvgElement('rect', { id: rectId });
+    clipPath.appendChild(rect);
+  }
+  const width = Number(timelineSvg.getAttribute('width')) || MIN_WIDTH;
+  rect.setAttribute('x', '0');
+  rect.setAttribute('y', String(track.top));
+  rect.setAttribute('width', String(width));
+  rect.setAttribute('height', String(track.height));
 }
 
 function renderTimeline() {
@@ -8676,6 +8704,7 @@ function renderTimeline() {
 
   applySvgFontScale(timelineSvg);
   ensureSvgStyles(timelineSvg);
+  ensureTrackClipDefs(timelineSvg);
 
   const defs = createSvgElement('defs', { 'data-export-defs': 'true' });
   const gradient = createSvgElement('linearGradient', {
