@@ -1524,7 +1524,7 @@ function getTrackOffsetBounds(track, baseY, rectHeight) {
   if (!track) {
     return { min: 0, max: 0 };
   }
-  const topLimit = track.top;
+  const topLimit = track.top + TRACK_CONTENT_PAD_Y;
   const bottomLimit = track.top + track.height - rectHeight;
   let min = topLimit - baseY;
   let max = bottomLimit - baseY;
@@ -3480,16 +3480,16 @@ const TOOLTIP_EDITORS = {
 
 const THERAPY_LEVEL_HEIGHT = 28;
 const THERAPY_ROW_SPACING = 12;
-const THERAPY_VERTICAL_PADDING = 36;
-const THERAPY_MIN_HEIGHT = 220;
+const THERAPY_VERTICAL_PADDING = 8;
+const THERAPY_MIN_HEIGHT = 80;
 const THERAPY_LABEL_LINE_HEIGHT = 14;
 const THERAPY_LABEL_PADDING_Y = 18;
 
-const SUPPORT_MIN_HEIGHT = 180;
+const SUPPORT_MIN_HEIGHT = 80;
 
 const ENDOSCOPY_ITEM_HEIGHT = 72;
 const ENDOSCOPY_ROW_SPACING = 20;
-const ENDOSCOPY_MIN_HEIGHT = 170;
+const ENDOSCOPY_MIN_HEIGHT = 80;
 const ENDOSCOPY_LABEL_LINE_HEIGHT = 14;
 const ENDOSCOPY_PADDING_Y = 28;
 const ENDOSCOPY_PADDING_X = 24;
@@ -3515,12 +3515,12 @@ const TRACK_DEFINITIONS = [
   { key: 'therapy', label: 'ЛТ', minHeight: THERAPY_MIN_HEIGHT },
   { key: 'support', label: 'Терапия сопровождения', minHeight: SUPPORT_MIN_HEIGHT },
   { key: 'endoscopy', label: 'Эндоскопическая процедура', minHeight: ENDOSCOPY_MIN_HEIGHT },
-  { key: 'surgery', label: 'Хирургия', minHeight: 130 },
-  { key: 'radiology', label: 'Рентгенология', minHeight: 130 },
-  { key: 'neuro', label: 'НС', minHeight: 120 },
-  { key: 'liver', label: 'ЛПП', minHeight: 130 },
-  { key: 'lab', label: 'Лабораторная диагностика', minHeight: 140 },
-  { key: 'event', label: 'События/диагнозы', minHeight: 120 }
+  { key: 'surgery', label: 'Хирургия', minHeight: 80 },
+  { key: 'radiology', label: 'Рентгенология', minHeight: 80 },
+  { key: 'neuro', label: 'НС', minHeight: 80 },
+  { key: 'liver', label: 'ЛПП', minHeight: 80 },
+  { key: 'lab', label: 'Лабораторная диагностика', minHeight: 80 },
+  { key: 'event', label: 'События/диагнозы', minHeight: 80 }
 ];
 
 const TRACK_GROUP_BY_KEY = {
@@ -3648,11 +3648,11 @@ const BASE_AXIS_LABEL_OFFSET = 22;
 const BASE_LEGEND_TOP_OFFSET = 45;
 const BASE_LEGEND_ROW_HEIGHT = 28;
 const BASE_LEGEND_EXTRA_GAP = 20;
-const TRACK_GAP = 4;
+const TRACK_GAP = 12;
 const TRACK_GAP_MIN = 0;
 const TRACK_GAP_MAX = 80;
 const GROUP_GAP_DEFAULT = 0;
-const TRACK_CONTENT_TOP_PAD = 0;
+const TRACK_CONTENT_PAD_Y = 2;
 const GROUP_GAP_MIN = 0;
 const GROUP_GAP_MAX = 120;
 const TRACK_HEIGHT_MIN = 8;
@@ -7356,7 +7356,7 @@ function computeEndoscopyTrackHeight(metrics, dates = []) {
 
   const blockHeight = layout.levelHeights.reduce((total, height) => total + height, 0);
   const spacing = (layout.levelHeights.length - 1) * ENDOSCOPY_ROW_SPACING;
-  return Math.max(ENDOSCOPY_MIN_HEIGHT, blockHeight + spacing + 48);
+  return Math.max(ENDOSCOPY_MIN_HEIGHT, blockHeight + spacing + THERAPY_VERTICAL_PADDING);
 }
 
 function getTrackLayout(metricsByKey, visibleKeys, dates) {
@@ -9090,8 +9090,7 @@ function renderTherapy(track, dates, chartWidth, metrics) {
 
   const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
   const spacing = (levelHeights.length - 1) * THERAPY_ROW_SPACING;
-  const startY =
-    renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, TRACK_CONTENT_TOP_PAD);
+  const startY = renderTrack.top + TRACK_CONTENT_PAD_Y;
 
   const levelOffsets = [];
   let cursorY = startY;
@@ -9363,8 +9362,7 @@ function renderSupportiveTherapy(track, dates, chartWidth, metrics) {
 
   const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
   const spacing = (levelHeights.length - 1) * THERAPY_ROW_SPACING;
-  const startY =
-    renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, TRACK_CONTENT_TOP_PAD);
+  const startY = renderTrack.top + TRACK_CONTENT_PAD_Y;
 
   const levelOffsets = [];
   let cursorY = startY;
@@ -9582,8 +9580,7 @@ function renderEndoscopy(track, dates, chartWidth, metrics) {
 
   const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
   const spacing = (levelHeights.length - 1) * ENDOSCOPY_ROW_SPACING;
-  const startY =
-    renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, TRACK_CONTENT_TOP_PAD);
+  const startY = renderTrack.top + TRACK_CONTENT_PAD_Y;
 
   const levelOffsets = [];
   let cursorY = startY;
@@ -10055,7 +10052,7 @@ function renderSurgery(track, dates, chartWidth, metrics) {
   const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
   const spacing = levelHeights.length ? (levelHeights.length - 1) * SINGLE_DATE_CARD_GAP : 0;
   const startY =
-    renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, TRACK_CONTENT_TOP_PAD);
+    renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, TRACK_CONTENT_PAD_Y);
 
   const levelOffsets = [];
   let cursorY = startY;
@@ -10150,7 +10147,7 @@ function renderRadiology(track, dates, chartWidth, metrics) {
   const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
   const spacing = levelHeights.length ? (levelHeights.length - 1) * SINGLE_DATE_CARD_GAP : 0;
   const startY =
-    renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, TRACK_CONTENT_TOP_PAD);
+    renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, TRACK_CONTENT_PAD_Y);
 
   const levelOffsets = [];
   let cursorY = startY;
@@ -10248,7 +10245,7 @@ function renderNeuro(track, dates, chartWidth, metrics) {
   const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
   const spacing = levelHeights.length ? (levelHeights.length - 1) * SINGLE_DATE_CARD_GAP : 0;
   const startY =
-    renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, TRACK_CONTENT_TOP_PAD);
+    renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, TRACK_CONTENT_PAD_Y);
 
   const levelOffsets = [];
   let cursorY = startY;
@@ -10352,7 +10349,7 @@ function renderLiver(track, dates, chartWidth) {
   const totalLevels = sorted.reduce((acc, item) => Math.max(acc, item.__level || 0), 0) + 1;
   const blockAreaHeight = totalLevels * levelHeight + (totalLevels - 1) * rowSpacing;
   const startY =
-    renderTrack.top + Math.max((renderTrack.height - blockAreaHeight) / 2, TRACK_CONTENT_TOP_PAD);
+    renderTrack.top + Math.max((renderTrack.height - blockAreaHeight) / 2, TRACK_CONTENT_PAD_Y);
 
   sorted.forEach((item) => {
     const level = item.__level || 0;
@@ -10449,7 +10446,7 @@ function renderLabDiagnostics(track, dates, chartWidth, metrics) {
   const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
   const spacing = levelHeights.length ? (levelHeights.length - 1) * SINGLE_DATE_CARD_GAP : 0;
   const startY =
-    renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, TRACK_CONTENT_TOP_PAD);
+    renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, TRACK_CONTENT_PAD_Y);
 
   const levelOffsets = [];
   let cursorY = startY;
@@ -10555,7 +10552,7 @@ function renderEvents(track, dates, chartWidth, metrics) {
   const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
   const spacing = levelHeights.length ? (levelHeights.length - 1) * SINGLE_DATE_CARD_GAP : 0;
   const startY =
-    renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, TRACK_CONTENT_TOP_PAD);
+    renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, TRACK_CONTENT_PAD_Y);
 
   const levelOffsets = [];
   let cursorY = startY;
@@ -12922,18 +12919,22 @@ async function exportSvgAsPng(svgElement, options = {}) {
   const viewBox = svgElement.viewBox?.baseVal;
   const viewBoxWidth = viewBox?.width || width;
   const viewBoxHeight = viewBox?.height || height;
+  const scrollWidth = chartViewport ? chartViewport.scrollWidth : 0;
+  const scrollHeight = chartViewport ? chartViewport.scrollHeight : 0;
+  const fullWidth = Math.max(viewBoxWidth, width, scrollWidth || 0);
+  const fullHeight = Math.max(viewBoxHeight, height, scrollHeight || 0);
 
   const clone = svgElement.cloneNode(true);
   ensureSvgStyles(clone);
   applySvgFontScale(clone);
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
-  let exportWidth = width;
-  let exportHeight = height;
+  let exportWidth = fullWidth;
+  let exportHeight = fullHeight;
   let viewBoxX = 0;
   let viewBoxY = 0;
-  let viewBoxW = viewBoxWidth;
-  let viewBoxH = viewBoxHeight;
+  let viewBoxW = fullWidth;
+  let viewBoxH = fullHeight;
 
   if (options.mode === 'viewport' && chartScrollContainer) {
     const viewW = chartScrollContainer.clientWidth || width;
@@ -13005,7 +13006,7 @@ async function handleDownload() {
 
   try {
     renderTimeline();
-    const result = await exportSvgAsPng(timelineSvg, { mode: 'viewport' });
+    const result = await exportSvgAsPng(timelineSvg, { mode: 'full' });
     if (!result) {
       throw new Error('Экспорт не вернул данных');
     }
