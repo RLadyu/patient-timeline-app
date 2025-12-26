@@ -534,6 +534,15 @@ EVENT_ICON_LIBRARY.forEach((group) => {
   });
 });
 
+const ICON_LIBRARY_BY_TRACK = {
+  event: EVENT_ICON_LIBRARY,
+  endoscopy: EVENT_ICON_LIBRARY,
+  surgery: EVENT_ICON_LIBRARY,
+  radiology: EVENT_ICON_LIBRARY,
+  neuro: EVENT_ICON_LIBRARY,
+  lab: EVENT_ICON_LIBRARY
+};
+
 const EVENT_ICON_HINTS = [
   { iconKey: 'icu', patterns: ['орит', 'реаним', 'интенсив'] },
   { iconKey: 'home', patterns: ['выпис', 'домой'] },
@@ -1409,6 +1418,46 @@ function getEndoscopyDisplaySummary(item, fallbackSummary) {
   }
   const base = summarizeEndoscopyProcedures(item.procedures).summary;
   return base || '';
+}
+
+function getIconLibraryForType(type) {
+  return ICON_LIBRARY_BY_TRACK[type] || EVENT_ICON_LIBRARY;
+}
+
+function findIcon(type, key) {
+  if (!key) {
+    return null;
+  }
+  const groups = getIconLibraryForType(type);
+  for (const group of groups) {
+    const match = group.icons.find((icon) => icon.key === key);
+    if (match) {
+      return match;
+    }
+  }
+  return null;
+}
+
+function findItem(type, id) {
+  if (!type || !id) {
+    return null;
+  }
+  switch (type) {
+    case 'event':
+      return state.events.find((item) => item.id === id) || null;
+    case 'endoscopy':
+      return state.endoscopy.find((item) => item.id === id) || null;
+    case 'surgery':
+      return state.surgery.find((item) => item.id === id) || null;
+    case 'radiology':
+      return state.radiology.find((item) => item.id === id) || null;
+    case 'neuro':
+      return state.neuro.find((item) => item.id === id) || null;
+    case 'lab':
+      return state.labDiagnostics.find((item) => item.id === id) || null;
+    default:
+      return null;
+  }
 }
 
 function parseHeightOverride(value) {
@@ -4245,9 +4294,10 @@ function ensureTooltipElement() {
   if (iconButton) {
     iconButton.addEventListener('click', (event) => {
       event.stopPropagation();
-      const eventId = iconButton.dataset.eventId;
-      if (eventId) {
-        openIconPickerForEvent(eventId);
+      const itemId = iconButton.dataset.itemId;
+      const itemType = iconButton.dataset.itemType;
+      if (itemId && itemType) {
+        openIconPickerForItem(itemType, itemId);
       }
     });
   }
@@ -4302,17 +4352,19 @@ function updateTooltipContent(detail, editInfo) {
   const iconPreview = tooltip.querySelector('[data-tooltip-icon-preview]');
   const iconButton = tooltip.querySelector('[data-tooltip-icon-picker]');
   if (iconRow && iconPreview && iconButton) {
-    const eventId = detail?.iconContext?.id || '';
-    if (eventId) {
-      const eventItem = state.events.find((entry) => entry.id === eventId);
-      const icon = eventItem ? findEventIcon(eventItem.iconKey) : null;
+    const ctx = detail?.iconContext || null;
+    if (ctx?.id && ctx?.type) {
+      const item = findItem(ctx.type, ctx.id);
+      const icon = item ? findIcon(ctx.type, item.iconKey) : null;
       iconPreview.textContent = icon ? `${icon.glyph || ''} ${icon.label}`.trim() : '—';
-      iconButton.dataset.eventId = eventId;
+      iconButton.dataset.itemId = ctx.id;
+      iconButton.dataset.itemType = ctx.type;
       iconButton.disabled = false;
       iconRow.hidden = false;
     } else {
       iconRow.hidden = true;
-      iconButton.dataset.eventId = '';
+      iconButton.dataset.itemId = '';
+      iconButton.dataset.itemType = '';
     }
   }
 
@@ -7585,22 +7637,26 @@ function updateDetailIconControls(detail) {
   if (!detailIconRow || !detailIconPreview || !detailIconChoose || !detailIconClear) {
     return;
   }
-  const eventId = detail?.iconContext?.id || null;
-  if (!eventId) {
+  const ctx = detail?.iconContext || null;
+  if (!ctx?.id || !ctx?.type) {
     detailIconRow.hidden = true;
-    detailIconChoose.dataset.eventId = '';
-    detailIconClear.dataset.eventId = '';
+    detailIconChoose.dataset.itemId = '';
+    detailIconChoose.dataset.itemType = '';
+    detailIconClear.dataset.itemId = '';
+    detailIconClear.dataset.itemType = '';
     return;
   }
-  const eventItem = state.events.find((entry) => entry.id === eventId);
-  const icon = eventItem ? findEventIcon(eventItem.iconKey) : null;
+  const item = findItem(ctx.type, ctx.id);
+  const icon = item ? findIcon(ctx.type, item.iconKey) : null;
   detailIconRow.hidden = false;
   detailIconPreview.textContent = icon ? icon.glyph : '—';
   detailIconPreview.title = icon ? icon.label : 'Без иконки';
   detailIconChoose.disabled = false;
   detailIconClear.disabled = !icon;
-  detailIconChoose.dataset.eventId = eventId;
-  detailIconClear.dataset.eventId = eventId;
+  detailIconChoose.dataset.itemId = ctx.id;
+  detailIconChoose.dataset.itemType = ctx.type;
+  detailIconClear.dataset.itemId = ctx.id;
+  detailIconClear.dataset.itemType = ctx.type;
 }
 
 function adjustFontForSelection(deltaPx) {
@@ -7678,9 +7734,32 @@ function setEventIcon(eventId, iconKey) {
   return true;
 }
 
-function clearEventIcon(eventId) {
+function setItemIcon(type, id, iconKey) {
+  if (type === 'event') {
+    return setEventIcon(id, iconKey);
+  }
+  const item = findItem(type, id);
+  if (!item) {
+    return false;
+  }
+  if (!iconKey) {
+    if (!item.iconKey) {
+      return false;
+    }
+    delete item.iconKey;
+    return true;
+  }
+  const icon = findIcon(type, iconKey);
+  if (!icon) {
+    return false;
+  }
+  item.iconKey = iconKey;
+  return true;
+}
+
+function clearItemIcon(type, id) {
   pushHistoryState();
-  const changed = setEventIcon(eventId, '');
+  const changed = setItemIcon(type, id, '');
   if (!changed) {
     historyStack.pop();
     return;
@@ -7688,9 +7767,7 @@ function clearEventIcon(eventId) {
   renderTimeline();
   if (activeDetailPayload) {
     const iconContext = activeDetailPayload.iconContext;
-    if (iconContext && iconContext.id === eventId) {
-      const eventItem = state.events.find((entry) => entry.id === eventId);
-      activeDetailPayload.iconContext = { id: eventId, iconKey: eventItem?.iconKey || '' };
+    if (iconContext && iconContext.id === id && iconContext.type === type) {
       showDetails(activeDetailPayload);
     }
   }
@@ -7736,15 +7813,15 @@ function renderIconPicker(groups, selectedKey) {
   });
 }
 
-function openIconPickerForEvent(eventId) {
+function openIconPickerForItem(type, id) {
   hideIconActionMenu();
-  const eventItem = state.events.find((entry) => entry.id === eventId);
-  if (!eventItem || !iconPickerModal || !iconPickerGroups || !iconPickerApply) {
+  const item = findItem(type, id);
+  if (!item || !iconPickerModal || !iconPickerGroups || !iconPickerApply) {
     return;
   }
-  const groups = suggestIconsForEvent(eventItem);
-  const autoKey = eventItem.iconKey || chooseAutoIconKey(eventItem);
-  iconPickerContext = { eventId, selectedKey: autoKey, groups };
+  const groups = getIconLibraryForType(type);
+  const autoKey = item.iconKey || '';
+  iconPickerContext = { type, id, selectedKey: autoKey, groups };
   renderIconPicker(groups, iconPickerContext.selectedKey);
   iconPickerApply.disabled = !iconPickerContext.selectedKey;
   iconPickerModal.setAttribute('aria-hidden', 'false');
@@ -7758,13 +7835,13 @@ function closeIconPicker() {
 
 function applyIconSelection() {
   if (!iconPickerContext) return;
-  const { eventId, selectedKey } = iconPickerContext;
-  if (!eventId || !selectedKey) {
+  const { type, id, selectedKey } = iconPickerContext;
+  if (!type || !id || !selectedKey) {
     closeIconPicker();
     return;
   }
   pushHistoryState();
-  const changed = setEventIcon(eventId, selectedKey);
+  const changed = setItemIcon(type, id, selectedKey);
   if (!changed) {
     historyStack.pop();
     closeIconPicker();
@@ -7773,7 +7850,7 @@ function applyIconSelection() {
   closeIconPicker();
   renderTimeline();
   if (activeDetailPayload) {
-    activeDetailPayload.iconContext = { id: eventId, iconKey: selectedKey };
+    activeDetailPayload.iconContext = { id, type };
     showDetails(activeDetailPayload);
   }
 }
@@ -7796,7 +7873,7 @@ function showIconActionMenu(target, eventId) {
   replaceBtn.textContent = 'Заменить иконку';
   replaceBtn.addEventListener('click', () => {
     hideIconActionMenu();
-    openIconPickerForEvent(eventId);
+    openIconPickerForItem('event', eventId);
   });
   const deleteBtn = document.createElement('button');
   deleteBtn.type = 'button';
@@ -7804,7 +7881,7 @@ function showIconActionMenu(target, eventId) {
   deleteBtn.textContent = 'Удалить иконку';
   deleteBtn.addEventListener('click', () => {
     hideIconActionMenu();
-    clearEventIcon(eventId);
+    clearItemIcon('event', eventId);
   });
   menu.appendChild(replaceBtn);
   menu.appendChild(deleteBtn);
@@ -9771,7 +9848,8 @@ function renderEndoscopy(track, dates, chartWidth, metrics) {
       color: COLORS.endoscopy,
       isFlagged: Boolean(item.isFlagged),
       deleteInfo: { type: 'endoscopy', id: item.id },
-      fontTarget: { type: 'endoscopy', id: item.id }
+      fontTarget: { type: 'endoscopy', id: item.id },
+      iconContext: { type: 'endoscopy', id: item.id }
     };
 
     const selectionKey = `endoscopy:${item.id}`;
@@ -10107,7 +10185,8 @@ function renderSurgery(track, dates, chartWidth, metrics) {
       color: COLORS.surgery,
       isFlagged: Boolean(item.isFlagged),
       deleteInfo: { type: 'surgery', id: item.id },
-      fontTarget: { type: 'surgery', id: item.id }
+      fontTarget: { type: 'surgery', id: item.id },
+      iconContext: { type: 'surgery', id: item.id }
     };
 
     const editInfo = { type: 'surgery', id: item.id, parameterId: item.parameterId || 'surgery_pleura' };
@@ -10204,7 +10283,8 @@ function renderRadiology(track, dates, chartWidth, metrics) {
       color: COLORS.radiology,
       isFlagged: Boolean(item.isFlagged),
       deleteInfo: { type: 'radiology', id: item.id },
-      fontTarget: { type: 'radiology', id: item.id }
+      fontTarget: { type: 'radiology', id: item.id },
+      iconContext: { type: 'radiology', id: item.id }
     };
 
     const editInfo = { type: 'radiology', id: item.id, parameterId: item.parameterId || 'rad_cxr' };
@@ -10297,7 +10377,8 @@ function renderNeuro(track, dates, chartWidth, metrics) {
       color: COLORS.neuro,
       isFlagged: Boolean(item.isFlagged),
       deleteInfo: { type: 'neuro', id: item.id },
-      fontTarget: { type: 'neuro', id: item.id }
+      fontTarget: { type: 'neuro', id: item.id },
+      iconContext: { type: 'neuro', id: item.id }
     };
 
     attachDetails(marker, detailPayload, marker, item.id, editInfo);
@@ -10499,7 +10580,8 @@ function renderLabDiagnostics(track, dates, chartWidth, metrics) {
       color: COLORS.lab,
       isFlagged: Boolean(item.isFlagged),
       deleteInfo: { type: 'lab', id: item.id },
-      fontTarget: { type: 'lab', id: item.id }
+      fontTarget: { type: 'lab', id: item.id },
+      iconContext: { type: 'lab', id: item.id }
     };
 
     const editInfo = { type: 'lab', id: item.id };
@@ -10600,7 +10682,7 @@ function renderEvents(track, dates, chartWidth, metrics) {
       isFlagged: Boolean(item.isFlagged),
       deleteInfo: { type: 'event', id: item.id },
       fontTarget: { type: 'event', id: item.id },
-      iconContext: { id: item.id, iconKey: item.iconKey || '' }
+      iconContext: { type: 'event', id: item.id }
     };
 
     const editInfo = { type: 'event', id: item.id };
@@ -10628,7 +10710,7 @@ function renderEvents(track, dates, chartWidth, metrics) {
       }
     }
 
-    const iconDef = findEventIcon(item.iconKey);
+    const iconDef = findIcon('event', item.iconKey);
     if (iconDef) {
       const offset = normalizeIconOffset(item.iconOffset || { x: 6, y: -12 });
       const icon = createSvgElement('text', {
@@ -13104,18 +13186,20 @@ if (detailFontIncrease) {
 
 if (detailIconChoose) {
   detailIconChoose.addEventListener('click', () => {
-    const id = detailIconChoose.dataset.eventId;
-    if (id) {
-      openIconPickerForEvent(id);
+    const id = detailIconChoose.dataset.itemId;
+    const type = detailIconChoose.dataset.itemType;
+    if (id && type) {
+      openIconPickerForItem(type, id);
     }
   });
 }
 
 if (detailIconClear) {
   detailIconClear.addEventListener('click', () => {
-    const id = detailIconClear.dataset.eventId;
-    if (id) {
-      clearEventIcon(id);
+    const id = detailIconClear.dataset.itemId;
+    const type = detailIconClear.dataset.itemType;
+    if (id && type) {
+      clearItemIcon(type, id);
     }
   });
 }
