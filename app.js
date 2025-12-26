@@ -1698,6 +1698,8 @@ function renderCardWithText({
 }
 
 function buildSingleDateCardLayout(text, fontScale, options = {}) {
+  const ABS_MIN_W = 40;
+  const ABS_MIN_H = 20;
   const minWidth = Number.isFinite(options.minWidth) ? options.minWidth : SINGLE_DATE_CARD_MIN_WIDTH;
   const maxWidth = Number.isFinite(options.maxWidth) ? options.maxWidth : SINGLE_DATE_CARD_MAX_WIDTH;
   const minHeight = Number.isFinite(options.minHeight) ? options.minHeight : SINGLE_DATE_CARD_MIN_HEIGHT;
@@ -1716,11 +1718,13 @@ function buildSingleDateCardLayout(text, fontScale, options = {}) {
     resolvedMaxWidth
   );
 
-  const width = clampCardWidth(widthOverride ?? baseWidth, minWidth, resolvedMaxWidth);
+  const widthMin = widthOverride !== null ? ABS_MIN_W : minWidth;
+  const width = clampCardWidth(widthOverride ?? baseWidth, widthMin, resolvedMaxWidth);
   const maxChars = estimateMaxCharsForWidth(width - paddingX * 2, fontScale);
   const lines = wrapTextToLines(text, maxChars, Infinity);
-  const naturalHeight = Math.max(minHeight, lines.length * lineHeight + paddingY * 2);
-  const height = heightOverride ? Math.max(naturalHeight, heightOverride) : naturalHeight;
+  const heightMin = heightOverride !== null ? ABS_MIN_H : minHeight;
+  const naturalHeight = Math.max(heightMin, lines.length * lineHeight + paddingY * 2);
+  const height = heightOverride !== null ? Math.max(naturalHeight, heightOverride) : naturalHeight;
 
   return {
     width,
@@ -3464,11 +3468,11 @@ const ENDOSCOPY_PADDING_X = 24;
 const ENDOSCOPY_CARD_MIN_WIDTH = 220;
 const ENDOSCOPY_CARD_MAX_WIDTH = 560;
 
-const SINGLE_DATE_CARD_MIN_WIDTH = 160;
+const SINGLE_DATE_CARD_MIN_WIDTH = 70;
 const SINGLE_DATE_CARD_MAX_WIDTH = 420;
-const SINGLE_DATE_CARD_MIN_HEIGHT = 48;
-const SINGLE_DATE_CARD_PADDING_X = 14;
-const SINGLE_DATE_CARD_PADDING_Y = 10;
+const SINGLE_DATE_CARD_MIN_HEIGHT = 28;
+const SINGLE_DATE_CARD_PADDING_X = 8;
+const SINGLE_DATE_CARD_PADDING_Y = 6;
 const SINGLE_DATE_CARD_LINE_HEIGHT = 14;
 const SINGLE_DATE_CARD_GAP = 10;
 const CHART_FONT_SCALE_MIN = 0.5;
