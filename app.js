@@ -1588,7 +1588,7 @@ function clampCardHeight(value, minHeight, maxHeight) {
 
 function computeCenteredCardX(centerX, width, chartWidth) {
   const minX = LEFT_MARGIN;
-  const maxX = Math.max(minX, chartWidth - RIGHT_MARGIN - width);
+  const maxX = Math.max(minX, chartWidth - CHART_RIGHT_PAD - width);
   const clampedX = Math.min(Math.max(centerX - width / 2, minX), maxX);
   return {
     x: clampedX,
@@ -1643,7 +1643,7 @@ function renderCardWithText({
   const cardWidth = clampCardWidth(widthOverride ?? baseWidth, minW, resolvedMaxWidth);
   const cardX = Math.min(
     Math.max(centerX - cardWidth / 2, LEFT_MARGIN),
-    chartWidth - RIGHT_MARGIN - cardWidth
+    chartWidth - CHART_RIGHT_PAD - cardWidth
   );
   const availableW = Math.max(0, cardWidth - paddingX * 2);
   const maxChars = estimateMaxCharsForWidth(availableW, fontScale);
@@ -3612,7 +3612,8 @@ const STEP_X_MIN = 12;
 const STEP_X_MAX = 80;
 let currentStepX = STEP_X_DEFAULT;
 const LEFT_MARGIN = 160;
-const RIGHT_MARGIN = 140;
+const CHART_RIGHT_PAD = 8;
+const RIGHT_MARGIN = CHART_RIGHT_PAD;
 const TOP_MARGIN = 70;
 const BOTTOM_MARGIN = 140;
 const BASE_AXIS_LABEL_OFFSET = 22;
@@ -7399,7 +7400,7 @@ function stackIntervals(items) {
 
 function getLastCoordinate(dates, chartWidth) {
   if (!dates.length) {
-    return chartWidth - RIGHT_MARGIN;
+    return chartWidth - CHART_RIGHT_PAD;
   }
   const lastIndex = dates.length - 1;
   return LEFT_MARGIN + lastIndex * getStepX();
@@ -8738,8 +8739,8 @@ function renderTimeline() {
   );
   const lastTrack = tracks.length ? tracks[tracks.length - 1] : null;
   const dateSpan = dates.length > 0 ? dates.length - 1 : 0;
-  let baseWidth = LEFT_MARGIN + RIGHT_MARGIN + dateSpan * getStepX();
-  let maxContentRight = LEFT_MARGIN + RIGHT_MARGIN;
+  let baseWidth = LEFT_MARGIN + CHART_RIGHT_PAD + dateSpan * getStepX();
+  let maxContentRight = LEFT_MARGIN + CHART_RIGHT_PAD;
 
   const fontScale = getCurrentFontScale();
 
@@ -8799,7 +8800,7 @@ function renderTimeline() {
   expandForSingleDate(surgeryMetrics, 'surgery');
   expandForSingleDate(radiologyMetrics, 'radiology');
 
-  baseWidth = Math.max(baseWidth, maxContentRight + RIGHT_MARGIN);
+  baseWidth = Math.max(baseWidth, maxContentRight + CHART_RIGHT_PAD);
   const chartWidth = Math.max(MIN_WIDTH, baseWidth || MIN_WIDTH);
   const bottomMargin = calculateBottomMargin(chartWidth, visibleTrackKeys);
   const baseHeight = TOP_MARGIN + bottomMargin + 200;
@@ -8882,7 +8883,7 @@ function renderTimeline() {
     const baseline = createSvgElement('line', {
       x1: LEFT_MARGIN,
       y1: track.top + track.height,
-      x2: chartWidth - RIGHT_MARGIN,
+      x2: chartWidth - CHART_RIGHT_PAD,
       y2: track.top + track.height,
       stroke: 'rgba(148, 163, 184, 0.25)'
     });
@@ -8925,7 +8926,7 @@ function renderTimeline() {
   const axisLine = createSvgElement('line', {
     x1: LEFT_MARGIN,
     y1: chartHeight - bottomMargin,
-    x2: chartWidth - RIGHT_MARGIN,
+    x2: chartWidth - CHART_RIGHT_PAD,
     y2: chartHeight - bottomMargin,
     class: 'axis-line'
   });
@@ -9607,7 +9608,10 @@ function renderEndoscopy(track, dates, chartWidth, metrics) {
 
     const maxCardWidth = Math.max(
       measurement.minWidth || ENDOSCOPY_CARD_MIN_WIDTH,
-      Math.min(measurement.maxWidth || ENDOSCOPY_CARD_MAX_WIDTH, chartWidth - LEFT_MARGIN - RIGHT_MARGIN)
+      Math.min(
+        measurement.maxWidth || ENDOSCOPY_CARD_MAX_WIDTH,
+        chartWidth - LEFT_MARGIN - CHART_RIGHT_PAD
+      )
     );
     const cardWidth = clampCardWidth(
       measurement.cardWidth || estimateEndoscopyCardWidth(measurement, itemFontScale),
@@ -10682,7 +10686,7 @@ function estimateLegendRows(chartWidth, visibleTrackKeys = []) {
     return 0;
   }
 
-  const maxWidth = Math.max(chartWidth - RIGHT_MARGIN, LEFT_MARGIN + 320);
+  const maxWidth = Math.max(chartWidth - CHART_RIGHT_PAD, LEFT_MARGIN + 320);
   const iconWidth = 20;
   const gap = 28 * scale;
   const charWidth = 7 * scale;
@@ -10770,7 +10774,7 @@ function renderLegend(chartWidth, chartHeight, bottomMargin, visibleTrackKeys = 
   const charWidth = 7 * scale;
   let cursorX = LEFT_MARGIN;
   let cursorY = chartHeight - bottomMargin + BASE_LEGEND_TOP_OFFSET * scale;
-  const maxWidth = chartWidth - RIGHT_MARGIN;
+  const maxWidth = chartWidth - CHART_RIGHT_PAD;
   const rowHeight = BASE_LEGEND_ROW_HEIGHT * scale;
 
   const ensureSpace = (expectedWidth) => {
