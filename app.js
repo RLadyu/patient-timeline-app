@@ -3648,11 +3648,11 @@ const BASE_AXIS_LABEL_OFFSET = 22;
 const BASE_LEGEND_TOP_OFFSET = 45;
 const BASE_LEGEND_ROW_HEIGHT = 28;
 const BASE_LEGEND_EXTRA_GAP = 20;
-const TRACK_GAP = 12;
+const TRACK_GAP = 0;
 const TRACK_GAP_MIN = 0;
 const TRACK_GAP_MAX = 80;
 const GROUP_GAP_DEFAULT = 0;
-const TRACK_CONTENT_PAD_Y = 2;
+const TRACK_CONTENT_PAD_Y = 0;
 const GROUP_GAP_MIN = 0;
 const GROUP_GAP_MAX = 120;
 const TRACK_HEIGHT_MIN = 8;
@@ -10051,8 +10051,7 @@ function renderSurgery(track, dates, chartWidth, metrics) {
   const levelHeights = layout.levelHeights || [];
   const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
   const spacing = levelHeights.length ? (levelHeights.length - 1) * SINGLE_DATE_CARD_GAP : 0;
-  const startY =
-    renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, TRACK_CONTENT_PAD_Y);
+  const startY = renderTrack.top + TRACK_CONTENT_PAD_Y;
 
   const levelOffsets = [];
   let cursorY = startY;
@@ -10146,8 +10145,7 @@ function renderRadiology(track, dates, chartWidth, metrics) {
   const levelHeights = layout.levelHeights || [];
   const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
   const spacing = levelHeights.length ? (levelHeights.length - 1) * SINGLE_DATE_CARD_GAP : 0;
-  const startY =
-    renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, TRACK_CONTENT_PAD_Y);
+  const startY = renderTrack.top + TRACK_CONTENT_PAD_Y;
 
   const levelOffsets = [];
   let cursorY = startY;
@@ -10244,8 +10242,7 @@ function renderNeuro(track, dates, chartWidth, metrics) {
   const levelHeights = layout.levelHeights || [];
   const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
   const spacing = levelHeights.length ? (levelHeights.length - 1) * SINGLE_DATE_CARD_GAP : 0;
-  const startY =
-    renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, TRACK_CONTENT_PAD_Y);
+  const startY = renderTrack.top + TRACK_CONTENT_PAD_Y;
 
   const levelOffsets = [];
   let cursorY = startY;
@@ -10348,8 +10345,7 @@ function renderLiver(track, dates, chartWidth) {
   const levelHeight = Math.max(SINGLE_DATE_CARD_MIN_HEIGHT, 24);
   const totalLevels = sorted.reduce((acc, item) => Math.max(acc, item.__level || 0), 0) + 1;
   const blockAreaHeight = totalLevels * levelHeight + (totalLevels - 1) * rowSpacing;
-  const startY =
-    renderTrack.top + Math.max((renderTrack.height - blockAreaHeight) / 2, TRACK_CONTENT_PAD_Y);
+  const startY = renderTrack.top + TRACK_CONTENT_PAD_Y;
 
   sorted.forEach((item) => {
     const level = item.__level || 0;
@@ -10445,8 +10441,7 @@ function renderLabDiagnostics(track, dates, chartWidth, metrics) {
   const levelHeights = layout.levelHeights || [];
   const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
   const spacing = levelHeights.length ? (levelHeights.length - 1) * SINGLE_DATE_CARD_GAP : 0;
-  const startY =
-    renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, TRACK_CONTENT_PAD_Y);
+  const startY = renderTrack.top + TRACK_CONTENT_PAD_Y;
 
   const levelOffsets = [];
   let cursorY = startY;
@@ -10551,8 +10546,7 @@ function renderEvents(track, dates, chartWidth, metrics) {
   const levelHeights = layout.levelHeights || [];
   const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
   const spacing = levelHeights.length ? (levelHeights.length - 1) * SINGLE_DATE_CARD_GAP : 0;
-  const startY =
-    renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, TRACK_CONTENT_PAD_Y);
+  const startY = renderTrack.top + TRACK_CONTENT_PAD_Y;
 
   const levelOffsets = [];
   let cursorY = startY;
