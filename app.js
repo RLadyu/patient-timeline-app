@@ -12899,7 +12899,7 @@ function handleUndoAction() {
   updateUndoButtonState();
 }
 
-async function exportSvgAsPng(svgElement) {
+async function exportSvgAsPng(svgElement, options = {}) {
   if (!svgElement) {
     throw new Error('SVG element is not available');
   }
@@ -12919,15 +12919,38 @@ async function exportSvgAsPng(svgElement) {
     svgElement.scrollHeight || 0,
     rect.height || 0
   );
+  const viewBox = svgElement.viewBox?.baseVal;
+  const viewBoxWidth = viewBox?.width || width;
+  const viewBoxHeight = viewBox?.height || height;
 
   const clone = svgElement.cloneNode(true);
   ensureSvgStyles(clone);
   applySvgFontScale(clone);
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
-  clone.setAttribute('width', width);
-  clone.setAttribute('height', height);
-  clone.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  let exportWidth = width;
+  let exportHeight = height;
+  let viewBoxX = 0;
+  let viewBoxY = 0;
+  let viewBoxW = viewBoxWidth;
+  let viewBoxH = viewBoxHeight;
+
+  if (options.mode === 'viewport' && chartScrollContainer) {
+    const viewW = chartScrollContainer.clientWidth || width;
+    const viewH = chartScrollContainer.clientHeight || height;
+    const offsetX = chartScrollContainer.scrollLeft || 0;
+    const offsetY = chartScrollContainer.scrollTop || 0;
+    exportWidth = viewW;
+    exportHeight = viewH;
+    viewBoxX = offsetX;
+    viewBoxY = offsetY;
+    viewBoxW = viewW;
+    viewBoxH = viewH;
+  }
+
+  clone.setAttribute('width', exportWidth);
+  clone.setAttribute('height', exportHeight);
+  clone.setAttribute('viewBox', `${viewBoxX} ${viewBoxY} ${viewBoxW} ${viewBoxH}`);
 
   const serializer = new XMLSerializer();
   const svgString = serializer.serializeToString(clone);
@@ -12935,8 +12958,8 @@ async function exportSvgAsPng(svgElement) {
   const image = await loadImage(svgDataUrl);
   const scale = window.devicePixelRatio > 1 ? window.devicePixelRatio : 1;
   const canvas = document.createElement('canvas');
-  canvas.width = Math.ceil(width * scale);
-  canvas.height = Math.ceil(height * scale);
+  canvas.width = Math.ceil(exportWidth * scale);
+  canvas.height = Math.ceil(exportHeight * scale);
   const context = canvas.getContext('2d');
 
   if (!context) {
@@ -12944,10 +12967,10 @@ async function exportSvgAsPng(svgElement) {
   }
 
   context.setTransform(scale, 0, 0, scale, 0, 0);
-  context.clearRect(0, 0, width, height);
+  context.clearRect(0, 0, exportWidth, exportHeight);
   context.fillStyle = '#ffffff';
-  context.fillRect(0, 0, width, height);
-  context.drawImage(image, 0, 0, width, height);
+  context.fillRect(0, 0, exportWidth, exportHeight);
+  context.drawImage(image, 0, 0, exportWidth, exportHeight);
 
   return new Promise((resolve, reject) => {
     if (canvas.toBlob) {
@@ -12981,7 +13004,8 @@ async function handleDownload() {
   closeInlineEditor();
 
   try {
-    const result = await exportSvgAsPng(timelineSvg);
+    renderTimeline();
+    const result = await exportSvgAsPng(timelineSvg, { mode: 'viewport' });
     if (!result) {
       throw new Error('Экспорт не вернул данных');
     }
