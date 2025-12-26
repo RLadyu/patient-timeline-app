@@ -8425,25 +8425,16 @@ function applyTrackHeightOverride(trackKey, nextHeight, minHeight) {
   if (!Number.isFinite(normalized) || normalized <= 0) {
     return false;
   }
-  const baseHeight = Math.max(Math.round(Number(minHeight) || 0), 0);
+  const clampedHeight = Math.max(TRACK_HEIGHT_MIN, normalized);
   const current = Number(state.layout.trackHeightOverride?.[trackKey]) || 0;
-  const shouldRemove = Math.abs(normalized - baseHeight) <= 1;
-
-  if (shouldRemove && !current) {
-    return false;
-  }
-  if (!shouldRemove && current === normalized) {
+  if (current === clampedHeight) {
     return false;
   }
 
   if (!state.layout.trackHeightOverride) {
     state.layout.trackHeightOverride = {};
   }
-  if (shouldRemove) {
-    delete state.layout.trackHeightOverride[trackKey];
-  } else {
-    state.layout.trackHeightOverride[trackKey] = normalized;
-  }
+  state.layout.trackHeightOverride[trackKey] = clampedHeight;
   state.layout = normalizeLayoutState(state.layout);
   syncStepXFromLayout();
   renderTimeline();
