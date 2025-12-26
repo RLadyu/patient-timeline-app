@@ -369,6 +369,34 @@ const SUPPORT_OUTLINE_COLOR = '#111827';
 const ENDOSCOPY_FILL_COLOR = 'rgba(191, 219, 254, 0.95)';
 const ENDOSCOPY_TITLE_COLOR = '#000000';
 const ENDOSCOPY_TEXT_COLOR = '#000000';
+const LAYOUT_STORAGE_KEY = 'timelineLayout';
+
+function loadLayoutFromStorage() {
+  if (typeof localStorage === 'undefined') {
+    return null;
+  }
+  try {
+    const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function saveLayoutToStorage(layout) {
+  if (typeof localStorage === 'undefined') {
+    return;
+  }
+  try {
+    localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layout));
+  } catch (error) {
+    // ignore storage errors
+  }
+}
 
 const DETAIL_TYPE_COLORS = {
   'Температура': COLORS.accent,
@@ -3620,10 +3648,10 @@ const BASE_AXIS_LABEL_OFFSET = 22;
 const BASE_LEGEND_TOP_OFFSET = 45;
 const BASE_LEGEND_ROW_HEIGHT = 28;
 const BASE_LEGEND_EXTRA_GAP = 20;
-const TRACK_GAP = 40;
+const TRACK_GAP = 10;
 const TRACK_GAP_MIN = 0;
 const TRACK_GAP_MAX = 80;
-const GROUP_GAP_DEFAULT = 24;
+const GROUP_GAP_DEFAULT = 8;
 const GROUP_GAP_MIN = 0;
 const GROUP_GAP_MAX = 120;
 const TRACK_HEIGHT_MIN = 8;
@@ -4070,6 +4098,7 @@ function applyLayoutSettings() {
   syncStepXFromLayout();
   updateZoomButtons();
   updateLayoutSettingsDisplay();
+  saveLayoutToStorage(state.layout);
   renderTimeline();
 }
 
@@ -7336,7 +7365,7 @@ function getTrackLayout(metricsByKey, visibleKeys, dates) {
   const layoutConfig = getLayoutConfig();
   let previousGroup = null;
 
-  keys.forEach((key) => {
+  keys.forEach((key, index) => {
     const track = TRACK_DEFINITIONS.find((definition) => definition.key === key);
     if (!track) return;
     let baseHeight = track.minHeight;
@@ -7373,7 +7402,11 @@ function getTrackLayout(metricsByKey, visibleKeys, dates) {
     const gapOverride = layoutConfig.trackGapOverride?.[key];
     const trackGap =
       Number.isFinite(gapOverride) && gapOverride !== null ? gapOverride : layoutConfig.trackGap;
-    currentTop += height + trackGap;
+    if (index < keys.length - 1) {
+      currentTop += height + trackGap;
+    } else {
+      currentTop += height;
+    }
     previousGroup = groupId;
   });
 
@@ -13270,6 +13303,10 @@ window.addEventListener('blur', () => {
   setSpacePanMode(false);
 });
 
+const savedLayout = loadLayoutFromStorage();
+if (savedLayout) {
+  state.layout = normalizeLayoutState({ ...state.layout, ...savedLayout });
+}
 buildParameterCatalogIndex();
 populateDirectionSelect();
 populateParameterSelect(directionSelect ? directionSelect.value : DIRECTIONS[0]?.id);
