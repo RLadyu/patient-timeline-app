@@ -8427,8 +8427,8 @@ function applyTrackHeightOverride(trackKey, nextHeight, minHeight) {
   }
   const clampedHeight = Math.max(TRACK_HEIGHT_MIN, normalized);
   const current = Number(state.layout.trackHeightOverride?.[trackKey]) || 0;
-  if (current === clampedHeight) {
-    return false;
+  if (Number.isFinite(current) && Math.abs(current - clampedHeight) < 1) {
+    return true;
   }
 
   if (!state.layout.trackHeightOverride) {
