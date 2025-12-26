@@ -31,7 +31,16 @@
         <label for="directionSelect">Направление</label>
         <select id="directionSelect" required></select>
         <label for="parameterSelect">Параметр</label>
-        <select id="parameterSelect" required></select>
+        <select id="parameterSelect" required>
+          <option value="temperature">Температура</option>
+          <option value="therapy">Лекарственная терапия (ЛТ)</option>
+          <option value="support">Терапия сопровождения</option>
+          <option value="endoscopy">Эндоскопическая процедура</option>
+          <option value="neuro">Неврологический статус (НС)</option>
+          <option value="liver">ЛПП</option>
+          <option value="lab">Лабораторная диагностика</option>
+          <option value="event">События/диагнозы</option>
+        </select>
         <div id="dynamicFields" class="form-fields"></div>
         <div class="form-actions">
           <button type="submit" class="primary">Добавить</button>

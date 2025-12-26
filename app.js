@@ -80,6 +80,26 @@ const state = {
       ]
     }
   ],
+  support: [
+    {
+      id: nextId('support'),
+      startDate: '2023-01-06',
+      endDate: '2023-03-31',
+      name: 'Пиридоксин',
+      dosage: '50 мг/сут',
+      note: 'Профилактика нейротоксичности на фоне циклосерина.',
+      isFlagged: false
+    },
+    {
+      id: nextId('support'),
+      startDate: '2023-01-20',
+      endDate: '2023-03-20',
+      name: 'Урсодезоксихолевая кислота',
+      dosage: '250 мг 2 р./сут',
+      note: 'Гепатопротекция при росте трансаминаз.',
+      isFlagged: true
+    }
+  ],
   supportiveTherapy: [
     {
       id: nextId('support'),
@@ -13270,5 +13290,18 @@ applyDisplayPreferences();
 const initialParam = ensureActiveParameterSelection();
 syncDirectionForParameter(initialParam);
 renderDynamicFields(parameterSelect ? parameterSelect.value : initialParam);
+console.log(
+  'INIT',
+  state.temps.length,
+  state.therapy.length,
+  state.endoscopy.length,
+  state.labDiagnostics.length,
+  state.events.length
+);
 renderTimeline();
+console.log(
+  'SVG',
+  document.querySelectorAll('#timeline circle').length,
+  document.querySelectorAll('#timeline rect').length
+);
 showDetails(null);
