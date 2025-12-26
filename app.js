@@ -540,7 +540,11 @@ const ICON_LIBRARY_BY_TRACK = {
   surgery: EVENT_ICON_LIBRARY,
   radiology: EVENT_ICON_LIBRARY,
   neuro: EVENT_ICON_LIBRARY,
-  lab: EVENT_ICON_LIBRARY
+  lab: EVENT_ICON_LIBRARY,
+  temperature: EVENT_ICON_LIBRARY,
+  therapy: EVENT_ICON_LIBRARY,
+  support: EVENT_ICON_LIBRARY,
+  liver: EVENT_ICON_LIBRARY
 };
 
 const EVENT_ICON_HINTS = [
@@ -1443,6 +1447,8 @@ function findItem(type, id) {
     return null;
   }
   switch (type) {
+    case 'temperature':
+      return state.temps.find((item) => item.id === id) || null;
     case 'event':
       return state.events.find((item) => item.id === id) || null;
     case 'endoscopy':
@@ -1455,9 +1461,45 @@ function findItem(type, id) {
       return state.neuro.find((item) => item.id === id) || null;
     case 'lab':
       return state.labDiagnostics.find((item) => item.id === id) || null;
+    case 'support':
+      return state.supportiveTherapy.find((item) => item.id === id) || null;
+    case 'liver':
+      return state.liver.find((item) => item.id === id) || null;
+    case 'therapy': {
+      for (const course of state.therapy) {
+        const medication = Array.isArray(course.medications)
+          ? course.medications.find((med) => med.id === id)
+          : null;
+        if (medication) {
+          return medication;
+        }
+      }
+      return null;
+    }
     default:
       return null;
   }
+}
+
+function renderItemIcon({ layer, type, item, x, y, detail, editInfo, selectionKey }) {
+  if (!layer || !item) {
+    return null;
+  }
+  const icon = findIcon(type, item.iconKey);
+  if (!icon) {
+    return null;
+  }
+  const iconEl = createSvgElement('text', {
+    x,
+    y,
+    class: 'event-icon',
+    'text-anchor': 'end',
+    'dominant-baseline': 'middle'
+  });
+  iconEl.textContent = icon.glyph || '•';
+  layer.appendChild(iconEl);
+  attachDetails(iconEl, detail, iconEl, selectionKey, editInfo, { inlineEditor: false });
+  return iconEl;
 }
 
 function parseHeightOverride(value) {
@@ -9117,9 +9159,20 @@ function renderTemperature(track, dates, chartWidth) {
       color: COLORS.accent,
       isFlagged: Boolean(item.isFlagged),
       deleteInfo: { type: 'temperature', id: item.id },
-      fontTarget: { type: 'temperature', id: item.id }
+      fontTarget: { type: 'temperature', id: item.id },
+      iconContext: { type: 'temperature', id: item.id }
     };
     const editInfo = { type: 'temperature', id: item.id };
+    renderItemIcon({
+      layer,
+      type: 'temperature',
+      item,
+      x: Math.max(x - 8, LEFT_MARGIN + 2),
+      y,
+      detail: detailPayload,
+      editInfo,
+      selectionKey: `${item.id}-icon`
+    });
 
     if (item.isFlagged) {
       circle.classList.add('is-flagged-shape');
@@ -9304,10 +9357,24 @@ function renderTherapy(track, dates, chartWidth, metrics) {
         courseId: item.courseId,
         medicationId: item.medicationId
       },
-      fontTarget: { type: 'therapy', courseId: item.courseId, medicationId: item.medicationId }
+      fontTarget: { type: 'therapy', courseId: item.courseId, medicationId: item.medicationId },
+      iconContext: { type: 'therapy', id: item.medicationId }
     };
 
     const editInfo = { type: 'therapy', courseId: item.courseId, medicationId: item.medicationId };
+    const iconItem = findItem('therapy', item.medicationId);
+    if (iconItem) {
+      renderItemIcon({
+        layer,
+        type: 'therapy',
+        item: iconItem,
+        x: Math.max(xStart - 6, LEFT_MARGIN + 2),
+        y: finalY + rectHeight / 2,
+        detail: detailPayload,
+        editInfo,
+        selectionKey: `${selectionKey}-icon`
+      });
+    }
     attachDetails(rect, detailPayload, rect, selectionKey, editInfo);
     attachDetails(label, detailPayload, rect, selectionKey, editInfo, { inlineEditor: false });
 
@@ -9559,10 +9626,24 @@ function renderSupportiveTherapy(track, dates, chartWidth, metrics) {
       color: SUPPORT_OUTLINE_COLOR,
       isFlagged,
       deleteInfo: { type: 'support', id: item.supportId },
-      fontTarget: { type: 'support', id: item.supportId }
+      fontTarget: { type: 'support', id: item.supportId },
+      iconContext: { type: 'support', id: item.supportId }
     };
 
     const editInfo = { type: 'support', id: item.supportId };
+    const iconItem = findItem('support', item.supportId);
+    if (iconItem) {
+      renderItemIcon({
+        layer,
+        type: 'support',
+        item: iconItem,
+        x: Math.max(xStart - 6, LEFT_MARGIN + 2),
+        y: finalY + rectHeight / 2,
+        detail: detailPayload,
+        editInfo,
+        selectionKey: `${selectionKey}-icon`
+      });
+    }
     attachDetails(rect, detailPayload, rect, selectionKey, editInfo);
     attachDetails(label, detailPayload, rect, selectionKey, editInfo, {
       inlineEditor: {
@@ -9854,6 +9935,16 @@ function renderEndoscopy(track, dates, chartWidth, metrics) {
 
     const selectionKey = `endoscopy:${item.id}`;
     const editInfo = { type: 'endoscopy', id: item.id };
+    renderItemIcon({
+      layer,
+      type: 'endoscopy',
+      item,
+      x: Math.max(rectX - 6, LEFT_MARGIN + 2),
+      y: finalY + rectHeight / 2,
+      detail: detailPayload,
+      editInfo,
+      selectionKey: `${selectionKey}-icon`
+    });
 
     attachDetails(rect, detailPayload, rect, selectionKey, editInfo);
     attachDetails(title, detailPayload, rect, selectionKey, editInfo);
@@ -10166,7 +10257,7 @@ function renderSurgery(track, dates, chartWidth, metrics) {
     if (!cardResult) {
       return;
     }
-    const { rect: card, textEl: label, cardY, cardHeight } = cardResult;
+    const { rect: card, textEl: label, cardY, cardHeight, cardX } = cardResult;
     const markerY = cardY + cardHeight + SINGLE_DATE_CARD_GAP;
     const marker = createSvgElement('circle', {
       cx: x,
@@ -10190,6 +10281,16 @@ function renderSurgery(track, dates, chartWidth, metrics) {
     };
 
     const editInfo = { type: 'surgery', id: item.id, parameterId: item.parameterId || 'surgery_pleura' };
+    renderItemIcon({
+      layer,
+      type: 'surgery',
+      item,
+      x: Math.max(cardX - 6, LEFT_MARGIN + 2),
+      y: cardY + cardHeight / 2,
+      detail,
+      editInfo,
+      selectionKey: `${item.id}-icon`
+    });
     attachDetails(marker, detail, marker, item.id, editInfo);
     attachDetails(card, detail, marker, item.id, editInfo);
     attachDetails(label, detail, marker, item.id, editInfo, { inlineEditor: false });
@@ -10261,7 +10362,7 @@ function renderRadiology(track, dates, chartWidth, metrics) {
     if (!cardResult) {
       return;
     }
-    const { rect: card, textEl: label, cardY, cardHeight } = cardResult;
+    const { rect: card, textEl: label, cardY, cardHeight, cardX } = cardResult;
     const markerY = cardY + cardHeight + SINGLE_DATE_CARD_GAP;
     const marker = createSvgElement('rect', {
       x: x - 9,
@@ -10288,6 +10389,16 @@ function renderRadiology(track, dates, chartWidth, metrics) {
     };
 
     const editInfo = { type: 'radiology', id: item.id, parameterId: item.parameterId || 'rad_cxr' };
+    renderItemIcon({
+      layer,
+      type: 'radiology',
+      item,
+      x: Math.max(cardX - 6, LEFT_MARGIN + 2),
+      y: cardY + cardHeight / 2,
+      detail,
+      editInfo,
+      selectionKey: `${item.id}-icon`
+    });
     attachDetails(marker, detail, marker, item.id, editInfo);
     attachDetails(card, detail, marker, item.id, editInfo);
     attachDetails(label, detail, marker, item.id, editInfo, { inlineEditor: false });
@@ -10357,7 +10468,7 @@ function renderNeuro(track, dates, chartWidth, metrics) {
     if (!cardResult) {
       return;
     }
-    const { rect: card, textEl: label, cardY, cardHeight } = cardResult;
+    const { rect: card, textEl: label, cardY, cardHeight, cardX } = cardResult;
     const markerY = cardY + cardHeight + SINGLE_DATE_CARD_GAP;
     const marker = createSvgElement('circle', {
       cx: x,
@@ -10382,6 +10493,16 @@ function renderNeuro(track, dates, chartWidth, metrics) {
     };
 
     attachDetails(marker, detailPayload, marker, item.id, editInfo);
+    renderItemIcon({
+      layer,
+      type: 'neuro',
+      item,
+      x: Math.max(cardX - 6, LEFT_MARGIN + 2),
+      y: cardY + cardHeight / 2,
+      detail: detailPayload,
+      editInfo,
+      selectionKey: `${item.id}-icon`
+    });
     attachDetails(card, detailPayload, marker, item.id, editInfo);
     attachDetails(label, detailPayload, marker, item.id, editInfo, {
       inlineEditor: {
@@ -10459,7 +10580,7 @@ function renderLiver(track, dates, chartWidth) {
     if (!cardResult) {
       return;
     }
-    const { rect, textEl: label } = cardResult;
+    const { rect, textEl: label, cardX, cardY, cardHeight } = cardResult;
 
     const comment = item.endDate
       ? `Период: ${formatDisplayDate(item.startDate)} – ${formatDisplayDate(item.endDate)}`
@@ -10474,9 +10595,20 @@ function renderLiver(track, dates, chartWidth) {
       color: COLORS.liver,
       isFlagged: Boolean(item.isFlagged),
       deleteInfo: { type: 'liver', id: item.id },
-      fontTarget: { type: 'liver', id: item.id }
+      fontTarget: { type: 'liver', id: item.id },
+      iconContext: { type: 'liver', id: item.id }
     };
 
+    renderItemIcon({
+      layer,
+      type: 'liver',
+      item,
+      x: Math.max(cardX - 6, LEFT_MARGIN + 2),
+      y: cardY + cardHeight / 2,
+      detail: detailPayload,
+      editInfo,
+      selectionKey: `${item.id}-icon`
+    });
     attachDetails(rect, detailPayload, rect, item.id, editInfo);
 
     attachDetails(label, detailPayload, rect, item.id, editInfo, {
@@ -10558,7 +10690,7 @@ function renderLabDiagnostics(track, dates, chartWidth, metrics) {
     if (!cardResult) {
       return;
     }
-    const { rect: card, textEl: label, cardY, cardHeight } = cardResult;
+    const { rect: card, textEl: label, cardY, cardHeight, cardX } = cardResult;
     const markerY = cardY + cardHeight + SINGLE_DATE_CARD_GAP;
     const marker = createSvgElement('rect', {
       x: x - 9,
@@ -10586,6 +10718,16 @@ function renderLabDiagnostics(track, dates, chartWidth, metrics) {
 
     const editInfo = { type: 'lab', id: item.id };
     attachDetails(marker, detail, marker, item.id, editInfo);
+    renderItemIcon({
+      layer,
+      type: 'lab',
+      item,
+      x: Math.max(cardX - 6, LEFT_MARGIN + 2),
+      y: cardY + cardHeight / 2,
+      detail,
+      editInfo,
+      selectionKey: `${item.id}-icon`
+    });
     attachDetails(card, detail, marker, item.id, editInfo);
     attachDetails(label, detail, marker, item.id, editInfo, {
       inlineEditor: {
@@ -10664,7 +10806,7 @@ function renderEvents(track, dates, chartWidth, metrics) {
     if (!cardResult) {
       return;
     }
-    const { rect: card, textEl: label, cardY, cardHeight } = cardResult;
+    const { rect: card, textEl: label, cardY, cardHeight, cardX } = cardResult;
     const markerY = cardY + cardHeight + SINGLE_DATE_CARD_GAP;
     const path = createSvgElement('path', {
       d: `M ${x} ${markerY - markerSize} L ${x + markerSize} ${markerY} L ${x} ${markerY + markerSize} L ${x - markerSize} ${markerY} Z`,
@@ -10686,6 +10828,16 @@ function renderEvents(track, dates, chartWidth, metrics) {
     };
 
     const editInfo = { type: 'event', id: item.id };
+    renderItemIcon({
+      layer,
+      type: 'event',
+      item,
+      x: Math.max(cardX - 6, LEFT_MARGIN + 2),
+      y: cardY + cardHeight / 2,
+      detail: detailPayload,
+      editInfo,
+      selectionKey: `${item.id}-icon`
+    });
     attachDetails(path, detailPayload, path, item.id, editInfo);
     attachDetails(card, detailPayload, path, item.id, editInfo);
     attachDetails(label, detailPayload, path, item.id, editInfo, { inlineEditor: false });
@@ -10708,32 +10860,6 @@ function renderEvents(track, dates, chartWidth, metrics) {
         indicator.classList.add('is-flagged-text');
         attachDetails(indicator, detailPayload, path, item.id, editInfo);
       }
-    }
-
-    const iconDef = findIcon('event', item.iconKey);
-    if (iconDef) {
-      const offset = normalizeIconOffset(item.iconOffset || { x: 6, y: -12 });
-      const icon = createSvgElement('text', {
-        x: x + markerSize + 6 + offset.x,
-        y: markerY - markerSize - 6 + offset.y,
-        class: 'event-icon'
-      });
-      icon.textContent = iconDef.glyph || '•';
-      icon.style.fontSize = `${14 * itemFontScale}px`;
-      layer.appendChild(icon);
-      attachDetails(icon, detailPayload, path, `${item.id}-icon`, editInfo, { inlineEditor: false });
-      registerDraggable([icon], {
-        type: 'eventIcon',
-        id: item.id,
-        startDate: item.date,
-        getOffset: () => normalizeIconOffset(item.iconOffset || { x: 6, y: -12 }),
-        getOffsetBounds: () => ({ minX: -120, maxX: 140, minY: -80, maxY: 80 }),
-        applyOffset: (nextOffset) => applyEventIconOffset(item.id, nextOffset, { minX: -120, maxX: 140, minY: -80, maxY: 80 })
-      });
-      icon.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        showIconActionMenu(icon, item.id);
-      });
     }
 
     registerDraggable([path, card, label], {
