@@ -1628,8 +1628,8 @@ function clampCardY(desiredY, track, height) {
   if (!track) {
     return desiredY;
   }
-  const minY = track.top + 6;
-  const maxY = track.top + track.height - height - 6;
+  const minY = track.top;
+  const maxY = track.top + track.height - height;
   if (!Number.isFinite(maxY) || maxY < minY) {
     return minY;
   }
@@ -3648,10 +3648,10 @@ const BASE_AXIS_LABEL_OFFSET = 22;
 const BASE_LEGEND_TOP_OFFSET = 45;
 const BASE_LEGEND_ROW_HEIGHT = 28;
 const BASE_LEGEND_EXTRA_GAP = 20;
-const TRACK_GAP = 10;
+const TRACK_GAP = 4;
 const TRACK_GAP_MIN = 0;
 const TRACK_GAP_MAX = 80;
-const GROUP_GAP_DEFAULT = 8;
+const GROUP_GAP_DEFAULT = 0;
 const GROUP_GAP_MIN = 0;
 const GROUP_GAP_MAX = 120;
 const TRACK_HEIGHT_MIN = 8;
@@ -7389,14 +7389,6 @@ function getTrackLayout(metricsByKey, visibleKeys, dates) {
         : baseHeight;
     const scaleY = baseHeight > 0 && height < baseHeight ? height / baseHeight : 1;
     const groupId = TRACK_GROUP_BY_KEY[key] || key;
-    if (previousGroup && groupId !== previousGroup) {
-      const groupGapOverride = layoutConfig.groupGapOverride?.[groupId];
-      const groupGap =
-        Number.isFinite(groupGapOverride) && groupGapOverride !== null
-          ? groupGapOverride
-          : layoutConfig.groupGap;
-      currentTop += groupGap;
-    }
     const layout = { ...track, height, baseHeight, top: currentTop, scaleY };
     layouts.push(layout);
     const gapOverride = layoutConfig.trackGapOverride?.[key];
