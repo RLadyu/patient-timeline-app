@@ -406,8 +406,10 @@ const SVG_STYLE_TEXT = `
   .neuro-card{fill:rgba(139,92,246,0.12);stroke:${COLORS.neuro};stroke-width:1.4;}
   .track-resize-handle{fill:#ffffff;stroke:${COLORS.muted};stroke-width:1.5;cursor:ns-resize;}
   .surgery-marker{fill:${COLORS.surgery};stroke:#ffffff;stroke-width:2;}
+  .surgery-card{fill:rgba(249,115,22,0.12);stroke:${COLORS.surgery};stroke-width:1.4;}
   .surgery-label{font-size:calc(12px * var(--font-scale));font-family:'Inter','Segoe UI',sans-serif;fill:#000000;}
   .radiology-marker{fill:${COLORS.radiology};stroke:#ffffff;stroke-width:2;}
+  .radiology-card{fill:rgba(2,132,199,0.12);stroke:${COLORS.radiology};stroke-width:1.4;}
   .radiology-label{font-size:calc(12px * var(--font-scale));font-family:'Inter','Segoe UI',sans-serif;fill:#000000;}
   .neuro-marker{fill:${COLORS.neuro};stroke:#ffffff;stroke-width:2;}
   .neuro-label{font-size:calc(12px * var(--font-scale));font-family:'Inter','Segoe UI',sans-serif;fill:#000000;}
@@ -1962,6 +1964,14 @@ function measureEndoscopyLayout(items = []) {
 
 function getSingleDateCardText(item, key) {
   switch (key) {
+    case 'surgery': {
+      const summary = buildSurgerySummary(item);
+      return summary.label || getSurgeryDisplayLabel(item);
+    }
+    case 'radiology': {
+      const summary = buildRadiologySummary(item);
+      return summary.label || getRadiologyDisplayLabel(item);
+    }
     case 'neuro':
       return item.status || '';
     case 'lab':
@@ -8604,6 +8614,12 @@ function renderTimeline() {
   const therapyMetrics = isTrackVisible('therapy') ? getTherapyMetrics() : { intervals: [], totalLevels: 0 };
   const supportMetrics = isTrackVisible('support') ? getSupportiveMetrics() : { intervals: [], totalLevels: 0 };
   const endoscopyMetrics = isTrackVisible('endoscopy') ? getEndoscopyMetrics() : { items: [], totalLevels: 0 };
+  const surgeryMetrics = isTrackVisible('surgery')
+    ? { items: [...state.surgery], layout: measureSingleDateCardLayout(state.surgery, dates, 'surgery') }
+    : { items: [], layout: { levelHeights: [], levelAssignments: new Map(), measurements: new Map() } };
+  const radiologyMetrics = isTrackVisible('radiology')
+    ? { items: [...state.radiology], layout: measureSingleDateCardLayout(state.radiology, dates, 'radiology') }
+    : { items: [], layout: { levelHeights: [], levelAssignments: new Map(), measurements: new Map() } };
   const neuroMetrics = isTrackVisible('neuro')
     ? { items: [...state.neuro], layout: measureSingleDateCardLayout(state.neuro, dates, 'neuro') }
     : { items: [], layout: { levelHeights: [], levelAssignments: new Map(), measurements: new Map() } };
@@ -8618,6 +8634,8 @@ function renderTimeline() {
       therapy: therapyMetrics,
       support: supportMetrics,
       endoscopy: endoscopyMetrics,
+      surgery: surgeryMetrics,
+      radiology: radiologyMetrics,
       neuro: neuroMetrics,
       lab: labMetrics,
       event: eventMetrics
@@ -8685,6 +8703,8 @@ function renderTimeline() {
   expandForSingleDate(neuroMetrics, 'neuro');
   expandForSingleDate(labMetrics, 'lab');
   expandForSingleDate(eventMetrics, 'event');
+  expandForSingleDate(surgeryMetrics, 'surgery');
+  expandForSingleDate(radiologyMetrics, 'radiology');
 
   baseWidth = Math.max(baseWidth, maxContentRight + RIGHT_MARGIN);
   const chartWidth = Math.max(MIN_WIDTH, baseWidth || MIN_WIDTH);
@@ -8824,8 +8844,8 @@ function renderTimeline() {
   renderTherapy(tracks.find((track) => track.key === 'therapy'), dates, chartWidth, therapyMetrics);
   renderSupportiveTherapy(tracks.find((track) => track.key === 'support'), dates, chartWidth, supportMetrics);
   renderEndoscopy(tracks.find((track) => track.key === 'endoscopy'), dates, chartWidth, endoscopyMetrics);
-  renderSurgery(tracks.find((track) => track.key === 'surgery'), dates);
-  renderRadiology(tracks.find((track) => track.key === 'radiology'), dates);
+  renderSurgery(tracks.find((track) => track.key === 'surgery'), dates, chartWidth, surgeryMetrics);
+  renderRadiology(tracks.find((track) => track.key === 'radiology'), dates, chartWidth, radiologyMetrics);
   renderNeuro(tracks.find((track) => track.key === 'neuro'), dates, chartWidth, neuroMetrics);
   renderLiver(tracks.find((track) => track.key === 'liver'), dates, chartWidth);
   renderLabDiagnostics(tracks.find((track) => track.key === 'lab'), dates, chartWidth, labMetrics);
@@ -9897,42 +9917,78 @@ function applyEndoscopySummaryOverride(entryId, newText) {
   return true;
 }
 
-function renderSurgery(track, dates) {
+function renderSurgery(track, dates, chartWidth, metrics) {
   const renderTrack = getTrackContentTrack(track);
   const layer = getTrackContentLayer(track);
   if (!renderTrack || !layer) return;
   const sorted = [...state.surgery].sort((a, b) => parseDateTime(a.date, a.time) - parseDateTime(b.date, b.time));
   if (!sorted.length) return;
 
-  const centerY = renderTrack.top + renderTrack.height / 2;
-  const markerRadius = 8;
+  const layout = metrics?.layout || { levelHeights: [], levelAssignments: new Map(), measurements: new Map() };
+  const levelHeights = layout.levelHeights || [];
+  const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
+  const spacing = levelHeights.length ? (levelHeights.length - 1) * SINGLE_DATE_CARD_GAP : 0;
+  const startY = renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, 12);
+
+  const levelOffsets = [];
+  let cursorY = startY;
+  levelHeights.forEach((height, level) => {
+    levelOffsets[level] = cursorY;
+    cursorY += height + SINGLE_DATE_CARD_GAP;
+  });
 
   sorted.forEach((item) => {
     const x = getXPosition(item.date, dates);
     const fontScale = getEffectiveChartFontScale(item);
     const summary = buildSurgerySummary(item);
+    const labelText = summary.label || getSurgeryDisplayLabel(item);
+    const measurement = layout.measurements?.get(item.id);
+    const baseLayout = measurement || buildSingleDateCardLayout(labelText, fontScale, {});
+    const maxWidth = Math.max(
+      baseLayout.baseWidth,
+      Math.min(SINGLE_DATE_CARD_MAX_WIDTH, chartWidth - LEFT_MARGIN - RIGHT_MARGIN)
+    );
+    const cardWidth = clampCardWidth(baseLayout.width, baseLayout.baseWidth, maxWidth);
+    const centered = computeCenteredCardX(x, cardWidth, chartWidth);
+    const level = layout.levelAssignments?.get(item.id) ?? item.__level ?? 0;
+    const cardHeight = Math.max(baseLayout.height, SINGLE_DATE_CARD_MIN_HEIGHT);
+    const cardY = clampCardY(levelOffsets[level] ?? startY, renderTrack, cardHeight);
+    const markerY = cardY + cardHeight + SINGLE_DATE_CARD_GAP;
     const marker = createSvgElement('circle', {
       cx: x,
-      cy: centerY,
-      r: markerRadius,
+      cy: markerY,
+      r: 8,
       class: 'surgery-marker'
     });
     layer.appendChild(marker);
 
-    const label = createSvgElement('text', {
-      x: x + markerRadius + 8,
-      y: centerY + 4,
-      class: 'surgery-label'
+    const card = createSvgElement('rect', {
+      x: centered.x,
+      y: cardY,
+      width: cardWidth,
+      height: cardHeight,
+      rx: 10,
+      ry: 10,
+      class: 'surgery-card'
     });
-    label.textContent = getSurgeryDisplayLabel(item);
+    layer.appendChild(card);
+
+    const label = createSvgElement('text', {
+      x: centered.center,
+      y: cardY + baseLayout.paddingY,
+      class: 'surgery-label',
+      'text-anchor': 'middle',
+      'dominant-baseline': 'hanging'
+    });
     label.style.fontSize = `${12 * fontScale}px`;
+    applyProvidedLines(label, baseLayout.lines, baseLayout.lineHeight);
     layer.appendChild(label);
 
     const detail = {
       type: 'Хирургия',
       date: item.date,
       time: item.time,
-      title: summary.label || getSurgeryDisplayLabel(item),
+      title: labelText,
       comment: [...summary.commentLines, item.comment || ''].filter(Boolean).join(' • '),
       color: COLORS.surgery,
       isFlagged: Boolean(item.isFlagged),
@@ -9942,22 +9998,21 @@ function renderSurgery(track, dates) {
 
     const editInfo = { type: 'surgery', id: item.id, parameterId: item.parameterId || 'surgery_pleura' };
     attachDetails(marker, detail, marker, item.id, editInfo);
+    attachDetails(card, detail, marker, item.id, editInfo);
     attachDetails(label, detail, marker, item.id, editInfo, { inlineEditor: false });
 
     if (item.isFlagged) {
       marker.classList.add('is-flagged-shape');
       label.classList.add('is-flagged-text');
-      const indicator = appendFlagIndicator(x - markerRadius - 8, centerY, {
-        anchor: 'end',
-        container: layer
-      });
+      card.classList.add('is-flagged-shape');
+      const indicator = appendFlagIndicator(x - 12, markerY, { anchor: 'end', container: layer });
       if (indicator) {
         indicator.classList.add('is-flagged-text');
         attachDetails(indicator, detail, marker, item.id, editInfo);
       }
     }
 
-    registerDraggable([marker, label], {
+    registerDraggable([marker, card, label], {
       type: 'surgery',
       id: item.id,
       startDate: item.date
@@ -9965,45 +10020,81 @@ function renderSurgery(track, dates) {
   });
 }
 
-function renderRadiology(track, dates) {
+function renderRadiology(track, dates, chartWidth, metrics) {
   const renderTrack = getTrackContentTrack(track);
   const layer = getTrackContentLayer(track);
   if (!renderTrack || !layer) return;
   const sorted = [...state.radiology].sort((a, b) => parseDateTime(a.date, a.time) - parseDateTime(b.date, b.time));
   if (!sorted.length) return;
 
-  const centerY = renderTrack.top + renderTrack.height / 2;
-  const markerSize = 16;
+  const layout = metrics?.layout || { levelHeights: [], levelAssignments: new Map(), measurements: new Map() };
+  const levelHeights = layout.levelHeights || [];
+  const blockHeight = levelHeights.reduce((total, height) => total + height, 0);
+  const spacing = levelHeights.length ? (levelHeights.length - 1) * SINGLE_DATE_CARD_GAP : 0;
+  const startY = renderTrack.top + Math.max((renderTrack.height - (blockHeight + spacing)) / 2, 12);
+
+  const levelOffsets = [];
+  let cursorY = startY;
+  levelHeights.forEach((height, level) => {
+    levelOffsets[level] = cursorY;
+    cursorY += height + SINGLE_DATE_CARD_GAP;
+  });
 
   sorted.forEach((item) => {
     const x = getXPosition(item.date, dates);
     const fontScale = getEffectiveChartFontScale(item);
     const summary = buildRadiologySummary(item);
+    const labelText = summary.label || getRadiologyDisplayLabel(item);
+    const measurement = layout.measurements?.get(item.id);
+    const baseLayout = measurement || buildSingleDateCardLayout(labelText, fontScale, {});
+    const maxWidth = Math.max(
+      baseLayout.baseWidth,
+      Math.min(SINGLE_DATE_CARD_MAX_WIDTH, chartWidth - LEFT_MARGIN - RIGHT_MARGIN)
+    );
+    const cardWidth = clampCardWidth(baseLayout.width, baseLayout.baseWidth, maxWidth);
+    const centered = computeCenteredCardX(x, cardWidth, chartWidth);
+    const level = layout.levelAssignments?.get(item.id) ?? item.__level ?? 0;
+    const cardHeight = Math.max(baseLayout.height, SINGLE_DATE_CARD_MIN_HEIGHT);
+    const cardY = clampCardY(levelOffsets[level] ?? startY, renderTrack, cardHeight);
+    const markerY = cardY + cardHeight + SINGLE_DATE_CARD_GAP;
     const marker = createSvgElement('rect', {
-      x: x - markerSize / 2,
-      y: centerY - markerSize / 2,
-      width: markerSize,
-      height: markerSize,
-      rx: 4,
-      ry: 4,
+      x: x - 9,
+      y: markerY - 9,
+      width: 18,
+      height: 18,
+      rx: 5,
+      ry: 5,
       class: 'radiology-marker'
     });
     layer.appendChild(marker);
 
-    const label = createSvgElement('text', {
-      x: x + markerSize / 2 + 8,
-      y: centerY + 4,
-      class: 'radiology-label'
+    const card = createSvgElement('rect', {
+      x: centered.x,
+      y: cardY,
+      width: cardWidth,
+      height: cardHeight,
+      rx: 10,
+      ry: 10,
+      class: 'radiology-card'
     });
-    label.textContent = getRadiologyDisplayLabel(item);
+    layer.appendChild(card);
+
+    const label = createSvgElement('text', {
+      x: centered.center,
+      y: cardY + baseLayout.paddingY,
+      class: 'radiology-label',
+      'text-anchor': 'middle',
+      'dominant-baseline': 'hanging'
+    });
     label.style.fontSize = `${12 * fontScale}px`;
+    applyProvidedLines(label, baseLayout.lines, baseLayout.lineHeight);
     layer.appendChild(label);
 
     const detail = {
       type: 'Рентгенология',
       date: item.date,
       time: item.time,
-      title: summary.label || getRadiologyDisplayLabel(item),
+      title: labelText,
       comment: [...summary.commentLines, item.comment || ''].filter(Boolean).join(' • '),
       color: COLORS.radiology,
       isFlagged: Boolean(item.isFlagged),
@@ -10013,22 +10104,21 @@ function renderRadiology(track, dates) {
 
     const editInfo = { type: 'radiology', id: item.id, parameterId: item.parameterId || 'rad_cxr' };
     attachDetails(marker, detail, marker, item.id, editInfo);
+    attachDetails(card, detail, marker, item.id, editInfo);
     attachDetails(label, detail, marker, item.id, editInfo, { inlineEditor: false });
 
     if (item.isFlagged) {
       marker.classList.add('is-flagged-shape');
       label.classList.add('is-flagged-text');
-      const indicator = appendFlagIndicator(x - markerSize - 6, centerY, {
-        anchor: 'end',
-        container: layer
-      });
+      card.classList.add('is-flagged-shape');
+      const indicator = appendFlagIndicator(x - 12, markerY, { anchor: 'end', container: layer });
       if (indicator) {
         indicator.classList.add('is-flagged-text');
         attachDetails(indicator, detail, marker, item.id, editInfo);
       }
     }
 
-    registerDraggable([marker, label], {
+    registerDraggable([marker, card, label], {
       type: 'radiology',
       id: item.id,
       startDate: item.date
