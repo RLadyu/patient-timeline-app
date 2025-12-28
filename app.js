@@ -325,9 +325,9 @@ const state = {
   ],
   timelineDates: [],
   layout: {
-    stepX: 50,
-    trackGap: 40,
-    groupGap: 24,
+    stepX: 36,
+    trackGap: 16,
+    groupGap: 20,
     groupGapOverride: {
       clinical: null,
       therapy: null,
@@ -3570,30 +3570,30 @@ const TOOLTIP_EDITORS = {
 };
 
 const THERAPY_LEVEL_HEIGHT = 28;
-const THERAPY_ROW_SPACING = 12;
-const THERAPY_VERTICAL_PADDING = 8;
-const THERAPY_MIN_HEIGHT = 80;
+const THERAPY_ROW_SPACING = 8;
+const THERAPY_VERTICAL_PADDING = 4;
+const THERAPY_MIN_HEIGHT = 64;
 const THERAPY_LABEL_LINE_HEIGHT = 14;
-const THERAPY_LABEL_PADDING_Y = 18;
+const THERAPY_LABEL_PADDING_Y = 14;
 
-const SUPPORT_MIN_HEIGHT = 80;
+const SUPPORT_MIN_HEIGHT = 64;
 
-const ENDOSCOPY_ITEM_HEIGHT = 72;
-const ENDOSCOPY_ROW_SPACING = 20;
-const ENDOSCOPY_MIN_HEIGHT = 80;
+const ENDOSCOPY_ITEM_HEIGHT = 60;
+const ENDOSCOPY_ROW_SPACING = 12;
+const ENDOSCOPY_MIN_HEIGHT = 64;
 const ENDOSCOPY_LABEL_LINE_HEIGHT = 14;
-const ENDOSCOPY_PADDING_Y = 28;
+const ENDOSCOPY_PADDING_Y = 20;
 const ENDOSCOPY_PADDING_X = 24;
 const ENDOSCOPY_CARD_MIN_WIDTH = 220;
 const ENDOSCOPY_CARD_MAX_WIDTH = 560;
 
 const SINGLE_DATE_CARD_MIN_WIDTH = 70;
 const SINGLE_DATE_CARD_MAX_WIDTH = 420;
-const SINGLE_DATE_CARD_MIN_HEIGHT = 28;
+const SINGLE_DATE_CARD_MIN_HEIGHT = 24;
 const SINGLE_DATE_CARD_PADDING_X = 8;
-const SINGLE_DATE_CARD_PADDING_Y = 6;
+const SINGLE_DATE_CARD_PADDING_Y = 4;
 const SINGLE_DATE_CARD_LINE_HEIGHT = 14;
-const SINGLE_DATE_CARD_GAP = 10;
+const SINGLE_DATE_CARD_GAP = 6;
 const CHART_FONT_SCALE_MIN = 0.5;
 const CHART_FONT_SCALE_MAX = 3;
 const CHART_FONT_STEP_PX = 1;
@@ -3602,16 +3602,16 @@ const CHART_BASE_LABEL_PX = 12;
 const SVG_CHAR_WIDTH = 6.4;
 
 const TRACK_DEFINITIONS = [
-  { key: 'temperature', label: 'Температура', minHeight: 150 },
+  { key: 'temperature', label: 'Температура', minHeight: 120 },
   { key: 'therapy', label: 'ЛТ', minHeight: THERAPY_MIN_HEIGHT },
   { key: 'support', label: 'Терапия сопровождения', minHeight: SUPPORT_MIN_HEIGHT },
   { key: 'endoscopy', label: 'Эндоскопическая процедура', minHeight: ENDOSCOPY_MIN_HEIGHT },
-  { key: 'surgery', label: 'Хирургия', minHeight: 80 },
-  { key: 'radiology', label: 'Рентгенология', minHeight: 80 },
-  { key: 'neuro', label: 'НС', minHeight: 80 },
-  { key: 'liver', label: 'ЛПП', minHeight: 80 },
-  { key: 'lab', label: 'Лабораторная диагностика', minHeight: 80 },
-  { key: 'event', label: 'События/диагнозы', minHeight: 80 }
+  { key: 'surgery', label: 'Хирургия', minHeight: 64 },
+  { key: 'radiology', label: 'Рентгенология', minHeight: 64 },
+  { key: 'neuro', label: 'НС', minHeight: 64 },
+  { key: 'liver', label: 'ЛПП', minHeight: 64 },
+  { key: 'lab', label: 'Лабораторная диагностика', minHeight: 64 },
+  { key: 'event', label: 'События/диагнозы', minHeight: 64 }
 ];
 
 const TRACK_GROUP_BY_KEY = {
@@ -3726,23 +3726,23 @@ function getParametersForDirection(directionKey) {
   return PARAMETER_CATALOG[directionKey] || [];
 }
 
-const STEP_X_DEFAULT = 50;
+const STEP_X_DEFAULT = 36;
 const STEP_X_MIN = 12;
 const STEP_X_MAX = 80;
 let currentStepX = STEP_X_DEFAULT;
 const LEFT_MARGIN = 160;
 const CHART_RIGHT_PAD = 8;
 const RIGHT_MARGIN = CHART_RIGHT_PAD;
-const TOP_MARGIN = 70;
-const BOTTOM_MARGIN = 140;
+const TOP_MARGIN = 50;
+const BOTTOM_MARGIN = 110;
 const BASE_AXIS_LABEL_OFFSET = 22;
-const BASE_LEGEND_TOP_OFFSET = 45;
-const BASE_LEGEND_ROW_HEIGHT = 28;
-const BASE_LEGEND_EXTRA_GAP = 20;
-const TRACK_GAP = 0;
+const BASE_LEGEND_TOP_OFFSET = 36;
+const BASE_LEGEND_ROW_HEIGHT = 24;
+const BASE_LEGEND_EXTRA_GAP = 16;
+const TRACK_GAP = 12;
 const TRACK_GAP_MIN = 0;
 const TRACK_GAP_MAX = 80;
-const GROUP_GAP_DEFAULT = 0;
+const GROUP_GAP_DEFAULT = 20;
 const TRACK_CONTENT_PAD_Y = 0;
 const GROUP_GAP_MIN = 0;
 const GROUP_GAP_MAX = 120;
@@ -3756,7 +3756,7 @@ const DEFAULT_GROUP_GAP_OVERRIDE = {
   diagnostics: null,
   events: null
 };
-const MIN_WIDTH = 1200;
+const MIN_WIDTH = 1000;
 const DRAG_THRESHOLD = 4;
 const RESIZE_THRESHOLD = 3;
 const RESIZE_HANDLE_SIZE = 12;
@@ -7489,8 +7489,12 @@ function getTrackLayout(metricsByKey, visibleKeys, dates) {
     const gapOverride = layoutConfig.trackGapOverride?.[key];
     const trackGap =
       Number.isFinite(gapOverride) && gapOverride !== null ? gapOverride : layoutConfig.trackGap;
+    const groupGapOverride = layoutConfig.groupGapOverride?.[groupId];
+    const groupGap =
+      Number.isFinite(groupGapOverride) && groupGapOverride !== null ? groupGapOverride : layoutConfig.groupGap;
+    const gap = previousGroup && groupId !== previousGroup ? groupGap : trackGap;
     if (index < keys.length - 1) {
-      currentTop += height + trackGap;
+      currentTop += height + gap;
     } else {
       currentTop += height;
     }

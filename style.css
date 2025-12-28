@@ -981,13 +981,13 @@ button.danger:disabled {
 
 .chart-viewport {
   position: relative;
-  min-width: 1200px;
+  min-width: 1000px;
 }
 
 #timeline {
   display: block;
   width: 100%;
-  min-height: 700px;
+  min-height: 560px;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: linear-gradient(180deg, rgba(249, 250, 251, 0.95) 0%, #ffffff 100%);
